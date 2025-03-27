@@ -1,0 +1,17 @@
+services:
+  geo_causal_inference:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    platform: linux/amd64
+    volumes:
+      - ./:/app
+      - trimmed_match_cache:/root/.cache/bazel
+    environment:
+      - PYTHONPATH=/app
+    ports:
+      - "9999:8888"
+    # Remove the command line to use the CMD from Dockerfile
+
+volumes:
+  trimmed_match_cache:
