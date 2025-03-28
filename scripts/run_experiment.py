@@ -32,6 +32,8 @@ def main():
                        help='Path to input CSV file containing geo-level time series data')
     parser.add_argument('--client', type=str, default='example',
                        help='Client name used for output directory structure')
+    parser.add_argument('--frequency', type=str, default='daily',
+                       help='Data frequency: "daily" or "weekly"')
     args = parser.parse_args()
     
     # Define the path to the test data
@@ -49,12 +51,26 @@ def main():
     # Set client name
     client_name = args.client
     
+    # Set data frequency
+    data_frequency = args.frequency.lower()
+    if data_frequency not in ['daily', 'weekly']:
+        print("Warning: Invalid frequency specified. Defaulting to 'daily'.")
+        data_frequency = 'daily'
+    
     print(f"Loading data from: {test_data_path}")
     print(f"Using client name: {client_name}")
+    print(f"Data frequency: {data_frequency}")
+    
+    # Add diagnostic prints
+    raw_df = pd.read_csv(test_data_path)
+    print(f"Raw CSV rows: {len(raw_df)}")
     
     # Load and validate the data
     geo_level_time_series = load_data(test_data_path)
+    print(f"After load_data: {len(geo_level_time_series)}")
+    
     geo_level_time_series = validate_input_data(geo_level_time_series)
+    print(f"After validate_input_data: {len(geo_level_time_series)}")
     
     print(f"Loaded {len(geo_level_time_series)} rows of data")
     print(f"Unique geos: {geo_level_time_series['geo'].nunique()}")
@@ -81,12 +97,22 @@ def main():
     config.design_start_date = min_date
     config.design_end_date = max_date
     
+    # Calculate time delta based on frequency
+    if data_frequency == 'weekly':
+        # For weekly data, adjust time windows to use weeks instead of days
+        eval_delta = pd.Timedelta(weeks=config.experiment_duration_weeks * 2)  # 8 weeks before end
+        coverage_delta = pd.Timedelta(weeks=config.experiment_duration_weeks)  # 4 weeks
+    else:
+        # For daily data, continue using the original calculation
+        eval_delta = pd.Timedelta(days=28*2)  # 8 weeks before end
+        coverage_delta = pd.Timedelta(days=28)  # 4 weeks
+    
     # Evaluation period starts at a reasonable point for a 4-week test
-    eval_start = max_date - pd.Timedelta(days=28*2)  # 8 weeks before end
+    eval_start = max_date - eval_delta
     config.eval_start_date = eval_start
     
     # Coverage test period is before evaluation
-    config.coverage_test_start_date = eval_start - pd.Timedelta(days=28)
+    config.coverage_test_start_date = eval_start - coverage_delta
     
     # Validate geos and ensure even number
     config.geos_exclude, warnings = validate_geos(geo_level_time_series)
@@ -98,7 +124,8 @@ def main():
         geo_level_time_series,
         config.eval_start_date,
         config.coverage_test_start_date,
-        config.experiment_duration_weeks
+        config.experiment_duration_weeks,
+        data_frequency=data_frequency  # Pass frequency to validate_experiment_periods
     )
     
     if not pass_checks:
@@ -109,8 +136,11 @@ def main():
     geo_time_series = geo_level_time_series[~geo_level_time_series["date"].isin(days_exclude)]
     geo_time_series = geo_time_series[~geo_time_series["geo"].isin(config.geos_exclude)]
     
-    # Get time windows
-    time_window_for_design, time_window_for_eval, coverage_test_window = config.get_time_windows()
+    # Get time windows with frequency consideration
+    if data_frequency == 'weekly':
+        time_window_for_design, time_window_for_eval, coverage_test_window = config.get_time_windows(frequency='weekly')
+    else:
+        time_window_for_design, time_window_for_eval, coverage_test_window = config.get_time_windows()
     
     # Prepare data for design by excluding coverage test period
     data_without_coverage_test_period = geo_time_series[
@@ -126,7 +156,8 @@ def main():
         time_window_for_eval=time_window_for_eval,
         response_col=config.response_col,
         spend_col=config.spend_col,
-        matching_metrics=config.matching_metrics
+        matching_metrics=config.matching_metrics,
+        data_frequency=data_frequency  # Pass frequency to designer
     )
     
     # Calculate the optimal budget
@@ -178,12 +209,18 @@ def main():
     fig_design.savefig(os.path.join(plots_dir, 'design_comparison.png'))
     
     # Plot the geo time series
+    if data_frequency == 'weekly':
+        eval_end_date = config.eval_start_date + pd.Timedelta(weeks=config.experiment_duration_weeks-1)
+    else:
+        eval_end_date = config.eval_start_date + pd.Timedelta(days=28-1)
+    
     fig_timeseries = plot_geo_time_series(
         geo_level_time_series, 
         treatment_geos=treatment_geo, 
         control_geos=control_geo,
         eval_start_date=config.eval_start_date,
-        eval_end_date=config.eval_start_date + pd.Timedelta(days=28-1)
+        eval_end_date=eval_end_date,
+        data_frequency=data_frequency  # Add frequency parameter
     )
     fig_timeseries.savefig(os.path.join(plots_dir, 'geo_time_series.png'))
     
@@ -248,6 +285,13 @@ def main():
     print(f"\nPlots saved to: {plots_dir}")
     print(f"Data files saved to: {data_dir}")
     print(f"Post-analysis data file saved to: {os.path.join(post_analysis_dir, 'experiment_data_for_postanalysis.csv')}")
+    
+    # Print data frequency information
+    print(f"\nExperiment designed with {data_frequency} data")
+    if data_frequency == 'weekly':
+        print(f"Evaluation period: {config.eval_start_date} to {eval_end_date} ({config.experiment_duration_weeks} weeks)")
+    else:
+        print(f"Evaluation period: {config.eval_start_date} to {eval_end_date} ({28} days)")
 
 
 if __name__ == "__main__":
