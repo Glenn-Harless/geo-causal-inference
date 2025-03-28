@@ -9,6 +9,7 @@ with a local CSV file.
 import os
 import pandas as pd
 import matplotlib.pyplot as plt
+import argparse
 from datetime import datetime
 
 # Import from the package directly
@@ -25,15 +26,31 @@ from trimmed_match.design.common_classes import GeoXType, GeoAssignment
 def main():
     """Main function to run the experiment."""
     
+    # Parse command-line arguments
+    parser = argparse.ArgumentParser(description='Run a Trimmed Match experiment using a CSV file.')
+    parser.add_argument('--input', type=str, 
+                       help='Path to input CSV file containing geo-level time series data')
+    parser.add_argument('--client', type=str, default='example',
+                       help='Client name used for output directory structure')
+    args = parser.parse_args()
+    
     # Define the path to the test data
-    test_data_path = os.path.abspath(os.path.join(
-        os.path.dirname(__file__), 
-        '..', 
-        'raw_data',
-        'example_data_for_design.csv'
-    ))
+    if args.input:
+        test_data_path = os.path.abspath(args.input)
+    else:
+        # Use default example data if no input is provided
+        test_data_path = os.path.abspath(os.path.join(
+            os.path.dirname(__file__), 
+            '..', 
+            'raw_data',
+            'example_data_for_design.csv'
+        ))
+    
+    # Set client name
+    client_name = args.client
     
     print(f"Loading data from: {test_data_path}")
+    print(f"Using client name: {client_name}")
     
     # Load and validate the data
     geo_level_time_series = load_data(test_data_path)
@@ -147,12 +164,14 @@ def main():
     print(f"\nControl Geos ({len(control_geo)}):")
     print(", ".join(map(str, sorted(control_geo))))
     
-    # Create output directories if they don't exist
-    plots_dir = os.path.join(os.path.dirname(__file__), '..', 'output', 'design', 'plots')
-    data_dir = os.path.join(os.path.dirname(__file__), '..', 'output', 'design', 'data')
+    # Create client-specific output directories
+    plots_dir = os.path.join(os.path.dirname(__file__), '..', 'output', client_name, 'design', 'plots')
+    data_dir = os.path.join(os.path.dirname(__file__), '..', 'output', client_name, 'design', 'data')
+    post_analysis_dir = os.path.join(os.path.dirname(__file__), '..', 'output', client_name, 'postanalysis')
     
     os.makedirs(plots_dir, exist_ok=True)
     os.makedirs(data_dir, exist_ok=True)
+    os.makedirs(post_analysis_dir, exist_ok=True)
     
     # Plot the designs comparison
     fig_design = plot_designs_comparison(design_results["results"])
@@ -224,12 +243,12 @@ def main():
         post_analysis_data = post_analysis_data.rename(columns={config.spend_col: 'cost'})
     
     # Save the post-analysis data
-    post_analysis_data.to_csv(os.path.join(data_dir, 'experiment_data_for_postanalysis.csv'), index=False)
+    post_analysis_data.to_csv(os.path.join(post_analysis_dir, 'experiment_data_for_postanalysis.csv'), index=False)
     
     print(f"\nPlots saved to: {plots_dir}")
     print(f"Data files saved to: {data_dir}")
-    print(f"Post-analysis data file saved to: {os.path.join(data_dir, 'experiment_data_for_postanalysis.csv')}")
-    
+    print(f"Post-analysis data file saved to: {os.path.join(post_analysis_dir, 'experiment_data_for_postanalysis.csv')}")
+
 
 if __name__ == "__main__":
     main()
