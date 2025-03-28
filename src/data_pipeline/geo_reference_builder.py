@@ -30,6 +30,7 @@ class GeoReferenceBuilder:
     def build_geo_spine_table(self, 
                              zip_city_file: str = 'zip_city_detail.csv',
                              zip_dma_file: str = 'zip_to_dma.csv',
+                             geo_zip_dim_file: str = 'geo_zip_dim.csv',
                              output_file: str = 'geo_spine.csv') -> pd.DataFrame:
         """
         Build a comprehensive geographic spine table.
@@ -37,11 +38,27 @@ class GeoReferenceBuilder:
         Args:
             zip_city_file: Filename for the zip-to-city mapping data
             zip_dma_file: Filename for the zip-to-DMA mapping data
+            geo_zip_dim_file: Filename for the primary zip-to-DMA mapping data (more complete)
             output_file: Filename for the output spine table
             
         Returns:
             The created spine table DataFrame
         """
+        # First, try to load the primary source - geo_zip_dim file with proper dtypes
+        geo_zip_dim_path = os.path.join(self.raw_data_path, geo_zip_dim_file)
+        if os.path.exists(geo_zip_dim_path):
+            geo_zip_dim_df = pd.read_csv(geo_zip_dim_path, dtype={'zip_code': str, 'zip_code_leading_zero': str, 'dma_code': str})
+            
+            # Use zip_code as the primary key for consistency
+            primary_df = geo_zip_dim_df.rename(columns={
+                'dma_name': 'dma_name',
+                'dma_code': 'dma_code'
+            })
+        else:
+            # If file doesn't exist, create an empty DataFrame with required columns
+            primary_df = pd.DataFrame(columns=['zip_code', 'dma_code', 'dma_name'])
+            print(f"Warning: Primary source file {geo_zip_dim_path} not found. Proceeding with secondary sources only.")
+        
         # Load zip-to-city data with proper dtypes to preserve leading zeros
         zip_city_path = os.path.join(self.raw_data_path, zip_city_file)
         zip_city_df = pd.read_csv(zip_city_path, dtype={'DELIVERY ZIPCODE': str})
@@ -75,13 +92,80 @@ class GeoReferenceBuilder:
             'dma_description': 'dma_name'
         })
         
-        # Join city and DMA data on zip code
-        spine_df = pd.merge(
-            city_df,
-            dma_df,
-            on='zip_code',
-            how='left'
-        )
+        # Start building the spine table from the primary source
+        if not primary_df.empty:
+            # First, make sure we have the necessary columns
+            if 'zip_code' not in primary_df.columns:
+                # Use zip_code_leading_zero if zip_code is not available
+                if 'zip_code_leading_zero' in primary_df.columns:
+                    primary_df['zip_code'] = primary_df['zip_code_leading_zero']
+                else:
+                    raise ValueError("Primary source must have either 'zip_code' or 'zip_code_leading_zero' column")
+            
+            # Initialize spine with primary source
+            spine_df = primary_df[['zip_code']].copy()
+            
+            # Add DMA info from primary source
+            if 'dma_code' in primary_df.columns:
+                spine_df['dma_code'] = primary_df['dma_code']
+            
+            if 'dma_name' in primary_df.columns:
+                spine_df['dma_name'] = primary_df['dma_name']
+            else:
+                # Use Google Ads DMA name if available
+                if 'dma_name_googleads' in primary_df.columns:
+                    spine_df['dma_name'] = primary_df['dma_name_googleads']
+                # Fallback to Facebook DMA name
+                elif 'dma_name_facebook' in primary_df.columns:
+                    spine_df['dma_name'] = primary_df['dma_name_facebook']
+                else:
+                    spine_df['dma_name'] = None
+            
+            # Merge with city data to get city and state info
+            spine_df = pd.merge(
+                spine_df,
+                city_df,
+                on='zip_code',
+                how='left'
+            )
+            
+            # Fill in missing DMA info from secondary source
+            if 'dma_code' not in spine_df.columns or spine_df['dma_code'].isna().any():
+                # Merge with DMA data to get missing DMA info
+                spine_df = pd.merge(
+                    spine_df,
+                    dma_df[['zip_code', 'dma_code', 'dma_name']],
+                    on='zip_code',
+                    how='left',
+                    suffixes=('', '_secondary')
+                )
+                
+                # Fill missing dma_code values with secondary source
+                if 'dma_code' in spine_df.columns:
+                    if 'dma_code_secondary' in spine_df.columns:
+                        spine_df['dma_code'] = spine_df['dma_code'].fillna(spine_df['dma_code_secondary'])
+                        spine_df.drop('dma_code_secondary', axis=1, inplace=True)
+                else:
+                    spine_df['dma_code'] = spine_df['dma_code_secondary']
+                    spine_df.drop('dma_code_secondary', axis=1, inplace=True)
+                
+                # Fill missing dma_name values with secondary source
+                if 'dma_name' in spine_df.columns:
+                    if 'dma_name_secondary' in spine_df.columns:
+                        spine_df['dma_name'] = spine_df['dma_name'].fillna(spine_df['dma_name_secondary'])
+                        spine_df.drop('dma_name_secondary', axis=1, inplace=True)
+                else:
+                    spine_df['dma_name'] = spine_df['dma_name_secondary']
+                    spine_df.drop('dma_name_secondary', axis=1, inplace=True)
+        else:
+            # Fall back to the original approach if no primary source data
+            # Join city and DMA data on zip code
+            spine_df = pd.merge(
+                city_df,
+                dma_df,
+                on='zip_code',
+                how='left'
+            )
         
         # Create state abbreviation - full name mapping
         state_mapping = self._create_state_mapping()
@@ -90,15 +174,28 @@ class GeoReferenceBuilder:
             spine_df['state_name'] = spine_df['state'].map(state_mapping)
         
         # Standardize column values
-        spine_df['city'] = spine_df['city'].str.strip().str.upper()
-        spine_df['dma_name'] = spine_df['dma_name'].fillna('').str.strip().str.upper()
+        spine_df['city'] = spine_df['city'].str.strip().str.upper() if 'city' in spine_df.columns else None
+        spine_df['dma_name'] = spine_df['dma_name'].fillna('').str.strip().str.upper() if 'dma_name' in spine_df.columns else None
         
         # Add geographic hierarchies
         # This allows for rolling up or drilling down between different geo levels
         spine_df['geo_key_zip'] = spine_df['zip_code']
-        spine_df['geo_key_city'] = spine_df['city'] + ', ' + spine_df['state']
+        spine_df['geo_key_city'] = spine_df.apply(
+            lambda x: f"{x['city']}, {x['state']}" if pd.notna(x.get('city')) and pd.notna(x.get('state')) else None, 
+            axis=1
+        )
         spine_df['geo_key_dma'] = spine_df['dma_name']
         spine_df['geo_key_state'] = spine_df['state']
+        
+        # Ensure we have all expected columns
+        expected_columns = [
+            'zip_code', 'city', 'state', 'dma_code', 'dma_name', 
+            'state_name', 'geo_key_zip', 'geo_key_city', 'geo_key_dma', 'geo_key_state'
+        ]
+        
+        for col in expected_columns:
+            if col not in spine_df.columns:
+                spine_df[col] = None
         
         # Save the spine table
         output_path = os.path.join(self.output_path, output_file)
