@@ -85,8 +85,8 @@ def main():
         average_order_value=256, # average order value in dollars / total sessions
         significance_level=0.10,
         power_level=0.80,
-        use_cross_validation=False, # set to True if you want to use cross validation
-        number_of_simulations=20, # number of simulations to run typically 200 but this wont finish
+        use_cross_validation=True, # set to True if you want to use cross validation
+        number_of_simulations=200, # number of simulations to run typically 200 but this wont finish
     )
     
     # Set dates based on the data
