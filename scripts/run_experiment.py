@@ -124,8 +124,7 @@ def main():
         geo_level_time_series,
         config.eval_start_date,
         config.coverage_test_start_date,
-        config.experiment_duration_weeks,
-        data_frequency=data_frequency  # Pass frequency to validate_experiment_periods
+        config.experiment_duration_weeks
     )
     
     if not pass_checks:
@@ -136,11 +135,9 @@ def main():
     geo_time_series = geo_level_time_series[~geo_level_time_series["date"].isin(days_exclude)]
     geo_time_series = geo_time_series[~geo_time_series["geo"].isin(config.geos_exclude)]
     
-    # Get time windows with frequency consideration
-    if data_frequency == 'weekly':
-        time_window_for_design, time_window_for_eval, coverage_test_window = config.get_time_windows(frequency='weekly')
-    else:
-        time_window_for_design, time_window_for_eval, coverage_test_window = config.get_time_windows()
+    # Get time windows 
+    # Note: We'll handle different frequencies in the designer
+    time_window_for_design, time_window_for_eval, coverage_test_window = config.get_time_windows()
     
     # Prepare data for design by excluding coverage test period
     data_without_coverage_test_period = geo_time_series[
@@ -156,8 +153,7 @@ def main():
         time_window_for_eval=time_window_for_eval,
         response_col=config.response_col,
         spend_col=config.spend_col,
-        matching_metrics=config.matching_metrics,
-        data_frequency=data_frequency  # Pass frequency to designer
+        matching_metrics=config.matching_metrics
     )
     
     # Calculate the optimal budget
@@ -219,8 +215,7 @@ def main():
         treatment_geos=treatment_geo, 
         control_geos=control_geo,
         eval_start_date=config.eval_start_date,
-        eval_end_date=eval_end_date,
-        data_frequency=data_frequency  # Add frequency parameter
+        eval_end_date=eval_end_date
     )
     fig_timeseries.savefig(os.path.join(plots_dir, 'geo_time_series.png'))
     
