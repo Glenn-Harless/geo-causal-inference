@@ -82,11 +82,11 @@ def main():
         experiment_duration_weeks=4,
         experiment_budget=300000.0,
         minimum_detectable_iroas=3.0,
-        average_order_value=1.0,
+        average_order_value=256, # average order value in dollars / total sessions
         significance_level=0.10,
         power_level=0.80,
-        use_cross_validation=True,
-        number_of_simulations=200
+        use_cross_validation=False, # set to True if you want to use cross validation
+        number_of_simulations=20, # number of simulations to run typically 200 but this wont finish
     )
     
     # Set dates based on the data

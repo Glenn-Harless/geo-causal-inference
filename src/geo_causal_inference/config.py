@@ -40,7 +40,7 @@ class ExperimentConfig:
     
     # Statistical parameters
     minimum_detectable_iroas: float = 3.0
-    average_order_value: float = 1.0
+    average_order_value: float = 256.0 # average order value in dollars / total sessions
     significance_level: float = 0.10
     power_level: float = 0.80
     
@@ -52,9 +52,9 @@ class ExperimentConfig:
     geos_exclude: List[int] = field(default_factory=list)
     days_exclude: List[Any] = field(default_factory=list)
     
-    # Processing parameters
-    use_cross_validation: bool = True
-    number_of_simulations: int = 200
+    # Processing parameters trying to speed up 
+    use_cross_validation: bool = False#True
+    number_of_simulations: int = 20#200
     
     def __post_init__(self):
         """Post-initialization processing."""
