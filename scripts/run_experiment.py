@@ -57,9 +57,12 @@ def main():
         print("Warning: Invalid frequency specified. Defaulting to 'daily'.")
         data_frequency = 'daily'
     
-    print(f"Loading data from: {test_data_path}")
-    print(f"Using client name: {client_name}")
-    print(f"Data frequency: {data_frequency}")
+    print(f"==================== DEBUG INFO ====================")
+    print(f"Running experiment with:")
+    print(f"- Input data: {test_data_path}")
+    print(f"- Client name: {client_name}")
+    print(f"- Data frequency: {data_frequency}")
+    print(f"===================================================")
     
     # Add diagnostic prints
     raw_df = pd.read_csv(test_data_path)
@@ -166,6 +169,34 @@ def main():
         num_simulations=config.number_of_simulations
     )
     
+    # Debug print for design results
+    print(f"\n==================== DEBUG DESIGN RESULTS ====================")
+    print(f"Type of design_results: {type(design_results)}")
+    print(f"Keys in design_results: {design_results.keys()}")
+    print(f"Optimal pair index: {design_results['optimal_pair_index']}")
+    
+    if 'results' in design_results:
+        print(f"Results shape: {design_results['results'].shape}")
+        print(f"Results columns: {design_results['results'].columns}")
+        
+        # Check for min RMSE cost adjusted
+        if 'rmse_cost_adjusted' in design_results['results'].columns:
+            min_rmse_idx = design_results['results']['rmse_cost_adjusted'].idxmin()
+            min_rmse_pair = design_results['results'].loc[min_rmse_idx, 'pair_index']
+            min_rmse = design_results['results'].loc[min_rmse_idx, 'rmse']
+            min_rmse_cost_adj = design_results['results'].loc[min_rmse_idx, 'rmse_cost_adjusted']
+            print(f"Min RMSE cost adjusted: {min_rmse_cost_adj} at pair_index {min_rmse_pair} with raw RMSE {min_rmse}")
+        
+        # Show values for optimal pair index
+        optimal_idx = design_results['results']['pair_index'] == design_results['optimal_pair_index']
+        if any(optimal_idx):
+            opt_row = design_results['results'][optimal_idx].iloc[0]
+            print(f"Optimal pair values:")
+            print(f"  - pair_index: {opt_row['pair_index']}")
+            print(f"  - rmse: {opt_row['rmse']}")
+            print(f"  - rmse_cost_adjusted: {opt_row['rmse_cost_adjusted']}")
+    print(f"==============================================================")
+    
     # Get the optimal design
     optimal_pair_index = design_results["optimal_pair_index"]
     
@@ -184,6 +215,14 @@ def main():
     print("\nDesign Summary:")
     print(summary)
     
+    # Debug print for summary creation
+    print(f"\n==================== DEBUG SUMMARY ====================")
+    print(f"Summary table content:")
+    print(summary)
+    print(f"Summary table data types:")
+    print(summary.dtypes)
+    print(f"=====================================================")
+    
     # Print treatment and control geos
     print(f"\nTreatment Geos ({len(treatment_geo)}):")
     print(", ".join(map(str, sorted(treatment_geo))))
@@ -199,6 +238,14 @@ def main():
     os.makedirs(plots_dir, exist_ok=True)
     os.makedirs(data_dir, exist_ok=True)
     os.makedirs(post_analysis_dir, exist_ok=True)
+    
+    # Debug print for output directories
+    print(f"\n==================== DEBUG OUTPUT PATHS ====================")
+    print(f"Output directories:")
+    print(f"- Plots: {plots_dir}")
+    print(f"- Data: {data_dir}")
+    print(f"- Post-analysis: {post_analysis_dir}")
+    print(f"===========================================================")
     
     # Plot the designs comparison
     fig_design = plot_designs_comparison(design_results["results"])
@@ -220,7 +267,13 @@ def main():
     fig_timeseries.savefig(os.path.join(plots_dir, 'geo_time_series.png'))
     
     # Save dataframes to CSV
-    summary.to_csv(os.path.join(data_dir, 'design_summary.csv'), index=False)
+    summary_path = os.path.join(data_dir, 'design_summary.csv')
+    summary.to_csv(summary_path, index=False)
+    print(f"\n==================== DEBUG FILE SAVING ====================")
+    print(f"Saved summary to: {summary_path}")
+    print(f"Summary content saved:")
+    print(summary)
+    print(f"==========================================================")
     
     # Save geo assignments
     geo_assignments = pd.DataFrame({
@@ -231,7 +284,9 @@ def main():
     geo_assignments.to_csv(os.path.join(data_dir, 'geo_assignments.csv'), index=False)
     
     # Save design results
-    design_results['results'].to_csv(os.path.join(data_dir, 'design_results.csv'), index=False)
+    results_path = os.path.join(data_dir, 'design_results.csv')
+    design_results['results'].to_csv(results_path, index=False)
+    print(f"Saved detailed design results to: {results_path}")
     
     # Create a complete dataset for post-analysis
     # First convert assignment to numeric values (1=Treatment, 2=Control)
