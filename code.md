@@ -284,9 +284,9 @@ if __name__ == "__main__":
 
 - Extension: .py
 - Language: python
-- Size: 9293 bytes
-- Created: 2025-03-27 11:20:48
-- Modified: 2025-03-27 11:20:48
+- Size: 12195 bytes
+- Created: 2025-03-29 15:22:05
+- Modified: 2025-03-29 15:22:05
 
 ### Code
 
@@ -302,6 +302,7 @@ with a local CSV file.
 import os
 import pandas as pd
 import matplotlib.pyplot as plt
+import argparse
 from datetime import datetime
 
 # Import from the package directly
@@ -318,19 +319,51 @@ from trimmed_match.design.common_classes import GeoXType, GeoAssignment
 def main():
     """Main function to run the experiment."""
     
+    # Parse command-line arguments
+    parser = argparse.ArgumentParser(description='Run a Trimmed Match experiment using a CSV file.')
+    parser.add_argument('--input', type=str, 
+                       help='Path to input CSV file containing geo-level time series data')
+    parser.add_argument('--client', type=str, default='example',
+                       help='Client name used for output directory structure')
+    parser.add_argument('--frequency', type=str, default='daily',
+                       help='Data frequency: "daily" or "weekly"')
+    args = parser.parse_args()
+    
     # Define the path to the test data
-    test_data_path = os.path.abspath(os.path.join(
-        os.path.dirname(__file__), 
-        '..', 
-        'raw_data',
-        'example_data_for_design.csv'
-    ))
+    if args.input:
+        test_data_path = os.path.abspath(args.input)
+    else:
+        # Use default example data if no input is provided
+        test_data_path = os.path.abspath(os.path.join(
+            os.path.dirname(__file__), 
+            '..', 
+            'raw_data',
+            'example_data_for_design.csv'
+        ))
+    
+    # Set client name
+    client_name = args.client
+    
+    # Set data frequency
+    data_frequency = args.frequency.lower()
+    if data_frequency not in ['daily', 'weekly']:
+        print("Warning: Invalid frequency specified. Defaulting to 'daily'.")
+        data_frequency = 'daily'
     
     print(f"Loading data from: {test_data_path}")
+    print(f"Using client name: {client_name}")
+    print(f"Data frequency: {data_frequency}")
+    
+    # Add diagnostic prints
+    raw_df = pd.read_csv(test_data_path)
+    print(f"Raw CSV rows: {len(raw_df)}")
     
     # Load and validate the data
     geo_level_time_series = load_data(test_data_path)
+    print(f"After load_data: {len(geo_level_time_series)}")
+    
     geo_level_time_series = validate_input_data(geo_level_time_series)
+    print(f"After validate_input_data: {len(geo_level_time_series)}")
     
     print(f"Loaded {len(geo_level_time_series)} rows of data")
     print(f"Unique geos: {geo_level_time_series['geo'].nunique()}")
@@ -342,11 +375,11 @@ def main():
         experiment_duration_weeks=4,
         experiment_budget=300000.0,
         minimum_detectable_iroas=3.0,
-        average_order_value=1.0,
+        average_order_value=256, # average order value in dollars / total sessions
         significance_level=0.10,
         power_level=0.80,
-        use_cross_validation=True,
-        number_of_simulations=200
+        use_cross_validation=True, # set to True if you want to use cross validation
+        number_of_simulations=200, # number of simulations to run typically 200 but this wont finish
     )
     
     # Set dates based on the data
@@ -357,12 +390,22 @@ def main():
     config.design_start_date = min_date
     config.design_end_date = max_date
     
+    # Calculate time delta based on frequency
+    if data_frequency == 'weekly':
+        # For weekly data, adjust time windows to use weeks instead of days
+        eval_delta = pd.Timedelta(weeks=config.experiment_duration_weeks * 2)  # 8 weeks before end
+        coverage_delta = pd.Timedelta(weeks=config.experiment_duration_weeks)  # 4 weeks
+    else:
+        # For daily data, continue using the original calculation
+        eval_delta = pd.Timedelta(days=28*2)  # 8 weeks before end
+        coverage_delta = pd.Timedelta(days=28)  # 4 weeks
+    
     # Evaluation period starts at a reasonable point for a 4-week test
-    eval_start = max_date - pd.Timedelta(days=28*2)  # 8 weeks before end
+    eval_start = max_date - eval_delta
     config.eval_start_date = eval_start
     
     # Coverage test period is before evaluation
-    config.coverage_test_start_date = eval_start - pd.Timedelta(days=28)
+    config.coverage_test_start_date = eval_start - coverage_delta
     
     # Validate geos and ensure even number
     config.geos_exclude, warnings = validate_geos(geo_level_time_series)
@@ -385,7 +428,8 @@ def main():
     geo_time_series = geo_level_time_series[~geo_level_time_series["date"].isin(days_exclude)]
     geo_time_series = geo_time_series[~geo_time_series["geo"].isin(config.geos_exclude)]
     
-    # Get time windows
+    # Get time windows 
+    # Note: We'll handle different frequencies in the designer
     time_window_for_design, time_window_for_eval, coverage_test_window = config.get_time_windows()
     
     # Prepare data for design by excluding coverage test period
@@ -440,24 +484,31 @@ def main():
     print(f"\nControl Geos ({len(control_geo)}):")
     print(", ".join(map(str, sorted(control_geo))))
     
-    # Create output directories if they don't exist
-    plots_dir = os.path.join(os.path.dirname(__file__), '..', 'output', 'design', 'plots')
-    data_dir = os.path.join(os.path.dirname(__file__), '..', 'output', 'design', 'data')
+    # Create client-specific output directories
+    plots_dir = os.path.join(os.path.dirname(__file__), '..', 'output', client_name, 'design', 'plots')
+    data_dir = os.path.join(os.path.dirname(__file__), '..', 'output', client_name, 'design', 'data')
+    post_analysis_dir = os.path.join(os.path.dirname(__file__), '..', 'output', client_name, 'postanalysis')
     
     os.makedirs(plots_dir, exist_ok=True)
     os.makedirs(data_dir, exist_ok=True)
+    os.makedirs(post_analysis_dir, exist_ok=True)
     
     # Plot the designs comparison
     fig_design = plot_designs_comparison(design_results["results"])
     fig_design.savefig(os.path.join(plots_dir, 'design_comparison.png'))
     
     # Plot the geo time series
+    if data_frequency == 'weekly':
+        eval_end_date = config.eval_start_date + pd.Timedelta(weeks=config.experiment_duration_weeks-1)
+    else:
+        eval_end_date = config.eval_start_date + pd.Timedelta(days=28-1)
+    
     fig_timeseries = plot_geo_time_series(
         geo_level_time_series, 
         treatment_geos=treatment_geo, 
         control_geos=control_geo,
         eval_start_date=config.eval_start_date,
-        eval_end_date=config.eval_start_date + pd.Timedelta(days=28-1)
+        eval_end_date=eval_end_date
     )
     fig_timeseries.savefig(os.path.join(plots_dir, 'geo_time_series.png'))
     
@@ -517,12 +568,19 @@ def main():
         post_analysis_data = post_analysis_data.rename(columns={config.spend_col: 'cost'})
     
     # Save the post-analysis data
-    post_analysis_data.to_csv(os.path.join(data_dir, 'experiment_data_for_postanalysis.csv'), index=False)
+    post_analysis_data.to_csv(os.path.join(post_analysis_dir, 'experiment_data_for_postanalysis.csv'), index=False)
     
     print(f"\nPlots saved to: {plots_dir}")
     print(f"Data files saved to: {data_dir}")
-    print(f"Post-analysis data file saved to: {os.path.join(data_dir, 'experiment_data_for_postanalysis.csv')}")
+    print(f"Post-analysis data file saved to: {os.path.join(post_analysis_dir, 'experiment_data_for_postanalysis.csv')}")
     
+    # Print data frequency information
+    print(f"\nExperiment designed with {data_frequency} data")
+    if data_frequency == 'weekly':
+        print(f"Evaluation period: {config.eval_start_date} to {eval_end_date} ({config.experiment_duration_weeks} weeks)")
+    else:
+        print(f"Evaluation period: {config.eval_start_date} to {eval_end_date} ({28} days)")
+
 
 if __name__ == "__main__":
     main()
@@ -1791,9 +1849,9 @@ __all__ = [
 
 - Extension: .py
 - Language: python
-- Size: 7632 bytes
-- Created: 2025-03-27 13:33:24
-- Modified: 2025-03-27 13:33:24
+- Size: 12123 bytes
+- Created: 2025-03-27 15:28:34
+- Modified: 2025-03-27 15:28:34
 
 ### Code
 
@@ -1899,7 +1957,7 @@ class DatasetCleaner:
         if 'aggregator' not in self.standardizers:
             from src.data_pipeline.data_standardizer import DataAggregator
             self.standardizers['aggregator'] = DataAggregator()
-    
+        
     def clean_ga4_sessions(self, df: pd.DataFrame, geo_level: str = 'region') -> pd.DataFrame:
         """
         Clean and standardize GA4 sessions data.
@@ -1914,30 +1972,43 @@ class DatasetCleaner:
         # Standardize date
         df = self.standardizers['date'].standardize(df, 'Date')
         
+        # Make a copy to avoid modifying the original DataFrame
+        result_df = df.copy()
+        
         # Standardize geo based on specified level
         geo_cols = ['City'] if geo_level == 'city' else ['Region']
-        df = self.standardizers['geo'].standardize(df, geo_cols, 'geo', geo_level)
+        result_df = self.standardizers['geo'].standardize(result_df, geo_cols, 'geo', geo_level)
+        
+        # Preserve Region information even when using city level
+        if geo_level == 'city' and 'Region' in df.columns:
+            # Standardize the Region column separately
+            region_df = self.standardizers['geo'].standardize(df, ['Region'], 'Region', 'region')
+            result_df['Region'] = region_df['Region']
         
         # Define grouping columns
         group_cols = ['Date', 'geo']
         
         # Add location ID if available and using city level
         if geo_level == 'city' and 'City ID' in df.columns:
-            df['location_id'] = df['City ID']
+            result_df['location_id'] = df['City ID']
             group_cols.append('location_id')
         
-        # Aggregate sessions by date and geo
-        df = self.standardizers['aggregator'].aggregate(
-            df, 
+        # Add Region to grouping columns if present
+        if 'Region' in result_df.columns:
+            group_cols.append('Region')
+        
+        # Aggregate sessions by date, geo, and region
+        result_df = self.standardizers['aggregator'].aggregate(
+            result_df, 
             group_cols, 
             'Sessions'
         )
         
         # Rename columns to standard format
-        df = df.rename(columns={'Sessions': 'response'})
+        result_df = result_df.rename(columns={'Sessions': 'response'})
         
-        return df
-    
+        return result_df
+        
     def clean_meta_spend(self, df: pd.DataFrame) -> pd.DataFrame:
         """
         Clean and standardize Meta geo spend data.
@@ -1951,24 +2022,36 @@ class DatasetCleaner:
         # Standardize date
         df = self.standardizers['date'].standardize(df, 'Day')
         
-        # Standardize geo
-        df = self.standardizers['geo'].standardize(df, ['DMA region'], 'geo')
+        # Make a copy
+        result_df = df.copy()
+        
+        # Standardize geo (DMA region)
+        result_df = self.standardizers['geo'].standardize(result_df, ['DMA region'], 'geo')
+        
+        # Clean and preserve original DMA name for joining
+        # Handle special characters like commas and & in DMA names
+        result_df['dma_name'] = result_df['DMA region'].str.replace(r'^"(.+)"$', r'\1', regex=True)  # Remove quotation marks
+        result_df['dma_name'] = result_df['dma_name'].str.replace('&', 'AND')  # Standardize ampersands
+        result_df['dma_name'] = result_df['dma_name'].str.strip().str.upper()
+        
+        # Extract state from the DMA name if it ends with a state code
+        result_df['dma_state'] = result_df['dma_name'].str.extract(r'([A-Z]{2})$')
         
         # Standardize cost
-        df = self.standardizers['cost'].standardize(df, 'Amount spent (USD)')
+        result_df = self.standardizers['cost'].standardize(result_df, 'Amount spent (USD)')
         
-        # Aggregate by date and geo
-        df = self.standardizers['aggregator'].aggregate(
-            df, 
-            ['Day', 'geo'], 
+        # Aggregate by date, geo, and DMA info
+        result_df = self.standardizers['aggregator'].aggregate(
+            result_df, 
+            ['Day', 'geo', 'dma_name', 'dma_state'], 
             'Amount spent (USD)'
         )
         
         # Rename columns to standard format
-        df = df.rename(columns={'Day': 'Date', 'Amount spent (USD)': 'meta_cost'})
+        result_df = result_df.rename(columns={'Day': 'Date', 'Amount spent (USD)': 'meta_cost'})
         
-        return df
-    
+        return result_df
+                
     def clean_tiktok_spend(self, df: pd.DataFrame) -> pd.DataFrame:
         """
         Clean and standardize TikTok geo spend data.
@@ -1982,24 +2065,49 @@ class DatasetCleaner:
         # Standardize date
         df = self.standardizers['date'].standardize(df, 'By Day')
         
-        # Standardize geo
-        df = self.standardizers['geo'].standardize(df, ['Subregion'], 'geo')
+        # Make a copy
+        result_df = df.copy()
+        
+        # Standardize geo (state level)
+        result_df = self.standardizers['geo'].standardize(result_df, ['Subregion'], 'geo')
+        
+        # Preserve original state name for joining
+        result_df['state'] = result_df['geo'].str.strip().str.upper()
+        
+        # Add state abbreviation for easier joining
+        state_mapping = {
+            'ALABAMA': 'AL', 'ALASKA': 'AK', 'ARIZONA': 'AZ', 'ARKANSAS': 'AR', 'CALIFORNIA': 'CA',
+            'COLORADO': 'CO', 'CONNECTICUT': 'CT', 'DELAWARE': 'DE', 'FLORIDA': 'FL', 'GEORGIA': 'GA',
+            'HAWAII': 'HI', 'IDAHO': 'ID', 'ILLINOIS': 'IL', 'INDIANA': 'IN', 'IOWA': 'IA',
+            'KANSAS': 'KS', 'KENTUCKY': 'KY', 'LOUISIANA': 'LA', 'MAINE': 'ME', 'MARYLAND': 'MD',
+            'MASSACHUSETTS': 'MA', 'MICHIGAN': 'MI', 'MINNESOTA': 'MN', 'MISSISSIPPI': 'MS', 'MISSOURI': 'MO',
+            'MONTANA': 'MT', 'NEBRASKA': 'NE', 'NEVADA': 'NV', 'NEW HAMPSHIRE': 'NH', 'NEW JERSEY': 'NJ',
+            'NEW MEXICO': 'NM', 'NEW YORK': 'NY', 'NORTH CAROLINA': 'NC', 'NORTH DAKOTA': 'ND', 'OHIO': 'OH',
+            'OKLAHOMA': 'OK', 'OREGON': 'OR', 'PENNSYLVANIA': 'PA', 'RHODE ISLAND': 'RI', 'SOUTH CAROLINA': 'SC',
+            'SOUTH DAKOTA': 'SD', 'TENNESSEE': 'TN', 'TEXAS': 'TX', 'UTAH': 'UT', 'VERMONT': 'VT',
+            'VIRGINIA': 'VA', 'WASHINGTON': 'WA', 'WEST VIRGINIA': 'WV', 'WISCONSIN': 'WI', 'WYOMING': 'WY',
+            'UNKNOWN': 'UNKNOWN'
+        }
+        result_df['state_abbrev'] = result_df['state'].map(state_mapping)
+        
+        # Handle "Unknown" value
+        result_df['state_abbrev'] = result_df['state_abbrev'].fillna('UNKNOWN')
         
         # Standardize cost
-        df = self.standardizers['cost'].standardize(df, 'Cost')
+        result_df = self.standardizers['cost'].standardize(result_df, 'Cost')
         
-        # Aggregate by date and geo
-        df = self.standardizers['aggregator'].aggregate(
-            df, 
-            ['By Day', 'geo'], 
+        # Aggregate by date and state information
+        result_df = self.standardizers['aggregator'].aggregate(
+            result_df, 
+            ['By Day', 'geo', 'state', 'state_abbrev'], 
             'Cost'
         )
         
         # Rename columns to standard format
-        df = df.rename(columns={'By Day': 'Date', 'Cost': 'tiktok_cost'})
+        result_df = result_df.rename(columns={'By Day': 'Date', 'Cost': 'tiktok_cost'})
         
-        return df
-    
+        return result_df
+                
     def clean_gads_spend(self, df: pd.DataFrame, geo_level: str = 'region') -> pd.DataFrame:
         """
         Clean and standardize Google Ads geo spend data.
@@ -2014,34 +2122,60 @@ class DatasetCleaner:
         # Standardize date
         df = self.standardizers['date'].standardize(df, 'Day')
         
+        # Make a copy to avoid modifying the original DataFrame
+        result_df = df.copy()
+        
         # Standardize geo based on specified level
         geo_cols = ['City (User location)'] if geo_level == 'city' else ['Region (User location)']
-        df = self.standardizers['geo'].standardize(df, geo_cols, 'geo', geo_level)
+        result_df = self.standardizers['geo'].standardize(result_df, geo_cols, 'geo', geo_level)
+        
+        # Preserve Region information when using city level
+        if geo_level == 'city' and 'Region (User location)' in df.columns:
+            region_df = self.standardizers['geo'].standardize(
+                df, ['Region (User location)'], 'Region', 'region'
+            )
+            result_df['Region'] = region_df['Region']
+        
+        # Preserve Metro area information for more complete geographic context
+        if 'Metro area (User location)' in df.columns:
+            result_df['dma_name'] = df['Metro area (User location)'].str.strip().str.upper()
+            # Extract state from Metro area if needed (e.g., "Albany-Schenectady-Troy NY" -> "NY")
+            result_df['dma_state'] = result_df['dma_name'].str.extract(r' ([A-Z]{2})$')
         
         # Standardize cost
-        df = self.standardizers['cost'].standardize(df, 'Cost')
+        result_df = self.standardizers['cost'].standardize(result_df, 'Cost')
         
-        # Aggregate by date and geo
-        df = self.standardizers['aggregator'].aggregate(
-            df, 
-            ['Day', 'geo'], 
+        # Define grouping columns
+        group_cols = ['Day', 'geo']
+        
+        # Add additional geographic columns to grouping columns if present
+        if 'Region' in result_df.columns:
+            group_cols.append('Region')
+        if 'dma_name' in result_df.columns:
+            group_cols.append('dma_name')
+        if 'dma_state' in result_df.columns:
+            group_cols.append('dma_state')
+        
+        # Aggregate by date, geo, and region
+        result_df = self.standardizers['aggregator'].aggregate(
+            result_df, 
+            group_cols, 
             'Cost'
         )
         
         # Rename columns to standard format
-        df = df.rename(columns={'Day': 'Date', 'Cost': 'gads_cost'})
+        result_df = result_df.rename(columns={'Day': 'Date', 'Cost': 'gads_cost'})
         
-        return df
-
+        return result_df
 ```
 
 ## File: src/data_pipeline/geo_joiner.py
 
 - Extension: .py
 - Language: python
-- Size: 14251 bytes
-- Created: 2025-03-27 13:17:04
-- Modified: 2025-03-27 13:17:04
+- Size: 17151 bytes
+- Created: 2025-03-27 15:41:57
+- Modified: 2025-03-27 15:41:57
 
 ### Code
 
@@ -2106,7 +2240,7 @@ class GeoJoiner:
         # Load DMA-state mapping
         if os.path.exists(dma_state_path):
             self.dma_state_mapping = pd.read_csv(dma_state_path)
-    
+
     def enrich_city_data(self, df: pd.DataFrame, city_col: str, state_col: Optional[str] = None) -> pd.DataFrame:
         """
         Enrich city-level data with DMA and state information.
@@ -2114,7 +2248,7 @@ class GeoJoiner:
         Args:
             df: DataFrame containing city-level data
             city_col: Name of the column containing city names
-            state_col: Name of the column containing state abbreviations (optional)
+            state_col: Name of the column containing state names or abbreviations
             
         Returns:
             Enriched DataFrame with added DMA information
@@ -2128,31 +2262,76 @@ class GeoJoiner:
         # Standardize city names
         result_df[city_col] = result_df[city_col].str.strip().str.upper()
         
+        # Print sample data for debugging
+        print(f"Sample city values in input data: {result_df[city_col].head(5).tolist()}")
+        print(f"Sample city values in mapping: {self.city_dma_mapping['city'].head(5).tolist()}")
+        
         # If state column is provided, use it for more accurate matching
         if state_col and state_col in result_df.columns:
+            # Standardize state names
             result_df[state_col] = result_df[state_col].str.strip().str.upper()
             
+            # Print sample data for debugging
+            print(f"Sample state values in input data: {result_df[state_col].head(5).tolist()}")
+            print(f"Sample state values in mapping: {self.city_dma_mapping['state'].head(5).tolist()}")
+            
+            # Check if we need to convert full state names to abbreviations
+            # Get a sample state value to check if it's a full name or abbreviation
+            sample_state = result_df[state_col].iloc[0]
+            
+            # State name to abbreviation mapping
+            state_mapping = {
+                'ALABAMA': 'AL', 'ALASKA': 'AK', 'ARIZONA': 'AZ', 'ARKANSAS': 'AR', 'CALIFORNIA': 'CA',
+                'COLORADO': 'CO', 'CONNECTICUT': 'CT', 'DELAWARE': 'DE', 'FLORIDA': 'FL', 'GEORGIA': 'GA',
+                'HAWAII': 'HI', 'IDAHO': 'ID', 'ILLINOIS': 'IL', 'INDIANA': 'IN', 'IOWA': 'IA',
+                'KANSAS': 'KS', 'KENTUCKY': 'KY', 'LOUISIANA': 'LA', 'MAINE': 'ME', 'MARYLAND': 'MD',
+                'MASSACHUSETTS': 'MA', 'MICHIGAN': 'MI', 'MINNESOTA': 'MN', 'MISSISSIPPI': 'MS', 'MISSOURI': 'MO',
+                'MONTANA': 'MT', 'NEBRASKA': 'NE', 'NEVADA': 'NV', 'NEW HAMPSHIRE': 'NH', 'NEW JERSEY': 'NJ',
+                'NEW MEXICO': 'NM', 'NEW YORK': 'NY', 'NORTH CAROLINA': 'NC', 'NORTH DAKOTA': 'ND', 'OHIO': 'OH',
+                'OKLAHOMA': 'OK', 'OREGON': 'OR', 'PENNSYLVANIA': 'PA', 'RHODE ISLAND': 'RI', 'SOUTH CAROLINA': 'SC',
+                'SOUTH DAKOTA': 'SD', 'TENNESSEE': 'TN', 'TEXAS': 'TX', 'UTAH': 'UT', 'VERMONT': 'VT',
+                'VIRGINIA': 'VA', 'WASHINGTON': 'WA', 'WEST VIRGINIA': 'WV', 'WISCONSIN': 'WI', 'WYOMING': 'WY'
+            }
+            
+            # Check if the state column contains full names
+            if len(sample_state) > 2 and sample_state in state_mapping:
+                print(f"Converting full state names to abbreviations")
+                result_df['state_abbrev'] = result_df[state_col].map(
+                    lambda x: state_mapping.get(x, x)
+                )
+                state_col_for_join = 'state_abbrev'
+            else:
+                # If the state column already contains abbreviations, use it directly
+                state_col_for_join = state_col
+            
             # Join with city-DMA mapping on both city and state
-            result_df = pd.merge(
+            print(f"Joining on columns: {city_col} and {state_col_for_join}")
+            joined_df = pd.merge(
                 result_df,
                 self.city_dma_mapping,
-                left_on=[city_col, state_col],
+                left_on=[city_col, state_col_for_join],
                 right_on=['city', 'state'],
                 how='left'
             )
+            
+            # Print join statistics
+            null_count = joined_df['dma_name'].isnull().sum() if 'dma_name' in joined_df.columns else len(joined_df)
+            total_count = len(joined_df)
+            print(f"Join results: {total_count - null_count} matches, {null_count} NaN values out of {total_count} total")
+            
+            return joined_df
         else:
             # Join with city-DMA mapping on city only
-            # Note: This may cause issues with cities that exist in multiple states
-            result_df = pd.merge(
+            joined_df = pd.merge(
                 result_df,
                 self.city_dma_mapping,
                 left_on=city_col,
                 right_on='city',
                 how='left'
             )
-        
-        return result_df
-    
+            
+            return joined_df
+            
     def enrich_dma_data(self, df: pd.DataFrame, dma_col: str) -> pd.DataFrame:
         """
         Enrich DMA-level data with state information.
@@ -2417,9 +2596,9 @@ class GeoHierarchyJoiner:
 
 - Extension: .py
 - Language: python
-- Size: 10489 bytes
-- Created: 2025-03-27 13:21:18
-- Modified: 2025-03-27 13:21:18
+- Size: 15536 bytes
+- Created: 2025-03-28 10:32:15
+- Modified: 2025-03-28 10:32:15
 
 ### Code
 
@@ -2456,6 +2635,7 @@ class GeoReferenceBuilder:
     def build_geo_spine_table(self, 
                              zip_city_file: str = 'zip_city_detail.csv',
                              zip_dma_file: str = 'zip_to_dma.csv',
+                             geo_zip_dim_file: str = 'geo_zip_dim.csv',
                              output_file: str = 'geo_spine.csv') -> pd.DataFrame:
         """
         Build a comprehensive geographic spine table.
@@ -2463,11 +2643,27 @@ class GeoReferenceBuilder:
         Args:
             zip_city_file: Filename for the zip-to-city mapping data
             zip_dma_file: Filename for the zip-to-DMA mapping data
+            geo_zip_dim_file: Filename for the primary zip-to-DMA mapping data (more complete)
             output_file: Filename for the output spine table
             
         Returns:
             The created spine table DataFrame
         """
+        # First, try to load the primary source - geo_zip_dim file with proper dtypes
+        geo_zip_dim_path = os.path.join(self.raw_data_path, geo_zip_dim_file)
+        if os.path.exists(geo_zip_dim_path):
+            geo_zip_dim_df = pd.read_csv(geo_zip_dim_path, dtype={'zip_code': str, 'zip_code_leading_zero': str, 'dma_code': str})
+            
+            # Use zip_code as the primary key for consistency
+            primary_df = geo_zip_dim_df.rename(columns={
+                'dma_name': 'dma_name',
+                'dma_code': 'dma_code'
+            })
+        else:
+            # If file doesn't exist, create an empty DataFrame with required columns
+            primary_df = pd.DataFrame(columns=['zip_code', 'dma_code', 'dma_name'])
+            print(f"Warning: Primary source file {geo_zip_dim_path} not found. Proceeding with secondary sources only.")
+        
         # Load zip-to-city data with proper dtypes to preserve leading zeros
         zip_city_path = os.path.join(self.raw_data_path, zip_city_file)
         zip_city_df = pd.read_csv(zip_city_path, dtype={'DELIVERY ZIPCODE': str})
@@ -2501,13 +2697,80 @@ class GeoReferenceBuilder:
             'dma_description': 'dma_name'
         })
         
-        # Join city and DMA data on zip code
-        spine_df = pd.merge(
-            city_df,
-            dma_df,
-            on='zip_code',
-            how='left'
-        )
+        # Start building the spine table from the primary source
+        if not primary_df.empty:
+            # First, make sure we have the necessary columns
+            if 'zip_code' not in primary_df.columns:
+                # Use zip_code_leading_zero if zip_code is not available
+                if 'zip_code_leading_zero' in primary_df.columns:
+                    primary_df['zip_code'] = primary_df['zip_code_leading_zero']
+                else:
+                    raise ValueError("Primary source must have either 'zip_code' or 'zip_code_leading_zero' column")
+            
+            # Initialize spine with primary source
+            spine_df = primary_df[['zip_code']].copy()
+            
+            # Add DMA info from primary source
+            if 'dma_code' in primary_df.columns:
+                spine_df['dma_code'] = primary_df['dma_code']
+            
+            if 'dma_name' in primary_df.columns:
+                spine_df['dma_name'] = primary_df['dma_name']
+            else:
+                # Use Google Ads DMA name if available
+                if 'dma_name_googleads' in primary_df.columns:
+                    spine_df['dma_name'] = primary_df['dma_name_googleads']
+                # Fallback to Facebook DMA name
+                elif 'dma_name_facebook' in primary_df.columns:
+                    spine_df['dma_name'] = primary_df['dma_name_facebook']
+                else:
+                    spine_df['dma_name'] = None
+            
+            # Merge with city data to get city and state info
+            spine_df = pd.merge(
+                spine_df,
+                city_df,
+                on='zip_code',
+                how='left'
+            )
+            
+            # Fill in missing DMA info from secondary source
+            if 'dma_code' not in spine_df.columns or spine_df['dma_code'].isna().any():
+                # Merge with DMA data to get missing DMA info
+                spine_df = pd.merge(
+                    spine_df,
+                    dma_df[['zip_code', 'dma_code', 'dma_name']],
+                    on='zip_code',
+                    how='left',
+                    suffixes=('', '_secondary')
+                )
+                
+                # Fill missing dma_code values with secondary source
+                if 'dma_code' in spine_df.columns:
+                    if 'dma_code_secondary' in spine_df.columns:
+                        spine_df['dma_code'] = spine_df['dma_code'].fillna(spine_df['dma_code_secondary'])
+                        spine_df.drop('dma_code_secondary', axis=1, inplace=True)
+                else:
+                    spine_df['dma_code'] = spine_df['dma_code_secondary']
+                    spine_df.drop('dma_code_secondary', axis=1, inplace=True)
+                
+                # Fill missing dma_name values with secondary source
+                if 'dma_name' in spine_df.columns:
+                    if 'dma_name_secondary' in spine_df.columns:
+                        spine_df['dma_name'] = spine_df['dma_name'].fillna(spine_df['dma_name_secondary'])
+                        spine_df.drop('dma_name_secondary', axis=1, inplace=True)
+                else:
+                    spine_df['dma_name'] = spine_df['dma_name_secondary']
+                    spine_df.drop('dma_name_secondary', axis=1, inplace=True)
+        else:
+            # Fall back to the original approach if no primary source data
+            # Join city and DMA data on zip code
+            spine_df = pd.merge(
+                city_df,
+                dma_df,
+                on='zip_code',
+                how='left'
+            )
         
         # Create state abbreviation - full name mapping
         state_mapping = self._create_state_mapping()
@@ -2516,15 +2779,28 @@ class GeoReferenceBuilder:
             spine_df['state_name'] = spine_df['state'].map(state_mapping)
         
         # Standardize column values
-        spine_df['city'] = spine_df['city'].str.strip().str.upper()
-        spine_df['dma_name'] = spine_df['dma_name'].fillna('').str.strip().str.upper()
+        spine_df['city'] = spine_df['city'].str.strip().str.upper() if 'city' in spine_df.columns else None
+        spine_df['dma_name'] = spine_df['dma_name'].fillna('').str.strip().str.upper() if 'dma_name' in spine_df.columns else None
         
         # Add geographic hierarchies
         # This allows for rolling up or drilling down between different geo levels
         spine_df['geo_key_zip'] = spine_df['zip_code']
-        spine_df['geo_key_city'] = spine_df['city'] + ', ' + spine_df['state']
+        spine_df['geo_key_city'] = spine_df.apply(
+            lambda x: f"{x['city']}, {x['state']}" if pd.notna(x.get('city')) and pd.notna(x.get('state')) else None, 
+            axis=1
+        )
         spine_df['geo_key_dma'] = spine_df['dma_name']
         spine_df['geo_key_state'] = spine_df['state']
+        
+        # Ensure we have all expected columns
+        expected_columns = [
+            'zip_code', 'city', 'state', 'dma_code', 'dma_name', 
+            'state_name', 'geo_key_zip', 'geo_key_city', 'geo_key_dma', 'geo_key_state'
+        ]
+        
+        for col in expected_columns:
+            if col not in spine_df.columns:
+                spine_df[col] = None
         
         # Save the spine table
         output_path = os.path.join(self.output_path, output_file)
@@ -2682,9 +2958,9 @@ if __name__ == '__main__':
 
 - Extension: .py
 - Language: python
-- Size: 4496 bytes
-- Created: 2025-03-27 11:16:38
-- Modified: 2025-03-26 10:10:43
+- Size: 4577 bytes
+- Created: 2025-03-29 13:25:07
+- Modified: 2025-03-29 13:25:07
 
 ### Code
 
@@ -2731,7 +3007,7 @@ class ExperimentConfig:
     
     # Statistical parameters
     minimum_detectable_iroas: float = 3.0
-    average_order_value: float = 1.0
+    average_order_value: float = 256.0 # average order value in dollars / total sessions
     significance_level: float = 0.10
     power_level: float = 0.80
     
@@ -2743,9 +3019,9 @@ class ExperimentConfig:
     geos_exclude: List[int] = field(default_factory=list)
     days_exclude: List[Any] = field(default_factory=list)
     
-    # Processing parameters
-    use_cross_validation: bool = True
-    number_of_simulations: int = 200
+    # Processing parameters trying to speed up 
+    use_cross_validation: bool = False#True
+    number_of_simulations: int = 20#200
     
     def __post_init__(self):
         """Post-initialization processing."""
