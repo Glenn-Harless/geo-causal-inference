@@ -30,10 +30,21 @@ def plot_designs_comparison(results, metric='rmse_cost_adjusted'):
     ax.grid(True, alpha=0.3)
     
     # Annotate the best design
-    best_design = results.loc[results[metric].idxmin()]
+    best_idx = results[metric].idxmin()
+    best_design = results.loc[best_idx]
+    
+    # Handle the case where best_design returns a DataFrame with multiple rows
+    if isinstance(best_design, pd.DataFrame):
+        # Use the first row
+        best_design = best_design.iloc[0]
+    
+    # Extract scalar values for formatting
+    budget_value = best_design['budget']
+    metric_value = best_design[metric]
+    
     ax.annotate(
-        f'Best: {best_design["budget"]:.0f}',
-        xy=(best_design['budget'], best_design[metric]),
+        f'Best: {budget_value:.0f}',
+        xy=(budget_value, metric_value),
         xytext=(10, -20),
         textcoords='offset points',
         arrowprops=dict(arrowstyle='->', connectionstyle='arc3,rad=0.2')
