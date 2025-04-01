@@ -109,14 +109,44 @@ def format_summary_table(design_results, minimum_detectable_iroas, min_detectabl
         pandas.DataFrame: Formatted summary table
     """
     results = design_results["results"]
-    best_design = results.loc[results['rmse_cost_adjusted'].idxmin()]
+    
+    # Add debug print to understand results structure
+    print("\n==== DEBUG: Design Results Info ====")
+    print(f"Results shape: {results.shape}")
+    
+    # Find the row with minimum rmse_cost_adjusted
+    min_rmse_idx = results['rmse_cost_adjusted'].idxmin()
+    print(f"Min RMSE Cost Adjusted Index: {min_rmse_idx}")
+    
+    # Get the best design row
+    best_design = results.loc[min_rmse_idx]
+    print(f"Best design type: {type(best_design)}")
+    
+    # Check if we have multiple rows with the same index
+    if isinstance(best_design, pd.DataFrame):
+        print(f"Multiple design rows found with index {min_rmse_idx}, shape: {best_design.shape}")
+        # Use the first row
+        best_design = best_design.iloc[0]
+        print("Using first row of best design")
+    
+    # Print key values for debugging
+    print("\n==== Best Design Values ====")
+    for col in ['budget', 'rmse', 'rmse_cost_adjusted', 'pair_index', 'num_pairs']:
+        if col in best_design:
+            print(f"{col}: {best_design[col]}")
+    
+    # Extract scalar values to avoid formatting errors with Series
+    budget_value = best_design['budget']
+    rmse = best_design['rmse']
+    rmse_cost_adjusted = best_design['rmse_cost_adjusted']
+    pair_index = best_design['pair_index']
     
     summary = pd.DataFrame([{
-        'Budget': format_budget(best_design['budget']),
+        'Budget': format_budget(budget_value),
         'Min Detectable iROAS': f"{minimum_detectable_iroas:.2f}",
-        'RMSE': f"{best_design['rmse']:.4f}",
-        'RMSE (Cost Adjusted)': f"{best_design['rmse_cost_adjusted']:.4f}",
-        'Pair Index': int(best_design['pair_index']),
+        'RMSE': f"{rmse:.4f}",
+        'RMSE (Cost Adjusted)': f"{rmse_cost_adjusted:.4f}",
+        'Pair Index': int(pair_index),
     }])
     
     if min_detectable_lift is not None:

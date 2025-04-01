@@ -83,8 +83,9 @@ def main():
     config = ExperimentConfig(
         geox_type=GeoXType.HOLD_BACK,
         experiment_duration_weeks=4,
-        experiment_budget=100000.0,
-        minimum_detectable_iroas=5.0,
+        experiment_budget=15000.0,
+        alternative_budgets=[15000.0, 20000.0, 25000.0],
+        minimum_detectable_iroas=3.0,
         average_order_value=256, # average order value in dollars / total sessions
         significance_level=0.10,
         power_level=0.80,
@@ -246,6 +247,40 @@ def main():
     print(f"- Data: {data_dir}")
     print(f"- Post-analysis: {post_analysis_dir}")
     print(f"===========================================================")
+    
+    # Save design results
+    design_results_df = design_results["results"]
+    design_results_df.to_csv(os.path.join(data_dir, "design_results.csv"), index=False)
+    
+    # Find the optimal pair index for minimal RMSE
+    optimal_pair_index = design_results["optimal_pair_index"]
+    
+    # Create summary of the optimal design
+    optimal_design = design_results["results"].loc[
+        design_results["results"]["pair_index"] == optimal_pair_index
+    ].squeeze()
+    
+    # Create design summary dataframe
+    design_summary = pd.DataFrame({
+        "optimal_pair_index": [optimal_pair_index],
+        "budget": [optimal_design["budget"]],
+        "min_detectable_iroas": [config.minimum_detectable_iroas],
+        "rmse": [optimal_design["rmse"]],
+        "rmse_cost_adjusted": [optimal_design["rmse_cost_adjusted"]],
+        "experiment_spend": [optimal_design["experiment_spend"]],
+        "num_pairs": [optimal_design["num_pairs"]],
+        "trim_rate": [optimal_design["trim_rate"]]
+    })
+    
+    # Save design summary
+    design_summary.to_csv(os.path.join(data_dir, "design_summary.csv"), index=False)
+    
+    # Generate and save trade-off visualizations
+    visualization_paths = designer.add_trade_off_visualizations(
+        design_results_df, 
+        plots_dir
+    )
+    print(f"Design trade-off visualizations saved to {plots_dir}")
     
     # Plot the designs comparison
     fig_design = plot_designs_comparison(design_results["results"])

@@ -284,9 +284,9 @@ if __name__ == "__main__":
 
 - Extension: .py
 - Language: python
-- Size: 12195 bytes
-- Created: 2025-03-29 15:22:05
-- Modified: 2025-03-29 15:22:05
+- Size: 16400 bytes
+- Created: 2025-03-31 14:49:34
+- Modified: 2025-03-31 14:49:34
 
 ### Code
 
@@ -350,9 +350,12 @@ def main():
         print("Warning: Invalid frequency specified. Defaulting to 'daily'.")
         data_frequency = 'daily'
     
-    print(f"Loading data from: {test_data_path}")
-    print(f"Using client name: {client_name}")
-    print(f"Data frequency: {data_frequency}")
+    print(f"==================== DEBUG INFO ====================")
+    print(f"Running experiment with:")
+    print(f"- Input data: {test_data_path}")
+    print(f"- Client name: {client_name}")
+    print(f"- Data frequency: {data_frequency}")
+    print(f"===================================================")
     
     # Add diagnostic prints
     raw_df = pd.read_csv(test_data_path)
@@ -459,6 +462,34 @@ def main():
         num_simulations=config.number_of_simulations
     )
     
+    # Debug print for design results
+    print(f"\n==================== DEBUG DESIGN RESULTS ====================")
+    print(f"Type of design_results: {type(design_results)}")
+    print(f"Keys in design_results: {design_results.keys()}")
+    print(f"Optimal pair index: {design_results['optimal_pair_index']}")
+    
+    if 'results' in design_results:
+        print(f"Results shape: {design_results['results'].shape}")
+        print(f"Results columns: {design_results['results'].columns}")
+        
+        # Check for min RMSE cost adjusted
+        if 'rmse_cost_adjusted' in design_results['results'].columns:
+            min_rmse_idx = design_results['results']['rmse_cost_adjusted'].idxmin()
+            min_rmse_pair = design_results['results'].loc[min_rmse_idx, 'pair_index']
+            min_rmse = design_results['results'].loc[min_rmse_idx, 'rmse']
+            min_rmse_cost_adj = design_results['results'].loc[min_rmse_idx, 'rmse_cost_adjusted']
+            print(f"Min RMSE cost adjusted: {min_rmse_cost_adj} at pair_index {min_rmse_pair} with raw RMSE {min_rmse}")
+        
+        # Show values for optimal pair index
+        optimal_idx = design_results['results']['pair_index'] == design_results['optimal_pair_index']
+        if any(optimal_idx):
+            opt_row = design_results['results'][optimal_idx].iloc[0]
+            print(f"Optimal pair values:")
+            print(f"  - pair_index: {opt_row['pair_index']}")
+            print(f"  - rmse: {opt_row['rmse']}")
+            print(f"  - rmse_cost_adjusted: {opt_row['rmse_cost_adjusted']}")
+    print(f"==============================================================")
+    
     # Get the optimal design
     optimal_pair_index = design_results["optimal_pair_index"]
     
@@ -477,6 +508,14 @@ def main():
     print("\nDesign Summary:")
     print(summary)
     
+    # Debug print for summary creation
+    print(f"\n==================== DEBUG SUMMARY ====================")
+    print(f"Summary table content:")
+    print(summary)
+    print(f"Summary table data types:")
+    print(summary.dtypes)
+    print(f"=====================================================")
+    
     # Print treatment and control geos
     print(f"\nTreatment Geos ({len(treatment_geo)}):")
     print(", ".join(map(str, sorted(treatment_geo))))
@@ -492,6 +531,48 @@ def main():
     os.makedirs(plots_dir, exist_ok=True)
     os.makedirs(data_dir, exist_ok=True)
     os.makedirs(post_analysis_dir, exist_ok=True)
+    
+    # Debug print for output directories
+    print(f"\n==================== DEBUG OUTPUT PATHS ====================")
+    print(f"Output directories:")
+    print(f"- Plots: {plots_dir}")
+    print(f"- Data: {data_dir}")
+    print(f"- Post-analysis: {post_analysis_dir}")
+    print(f"===========================================================")
+    
+    # Save design results
+    design_results_df = design_results["results"]
+    design_results_df.to_csv(os.path.join(data_dir, "design_results.csv"), index=False)
+    
+    # Find the optimal pair index for minimal RMSE
+    optimal_pair_index = design_results["optimal_pair_index"]
+    
+    # Create summary of the optimal design
+    optimal_design = design_results["results"].loc[
+        design_results["results"]["pair_index"] == optimal_pair_index
+    ].squeeze()
+    
+    # Create design summary dataframe
+    design_summary = pd.DataFrame({
+        "optimal_pair_index": [optimal_pair_index],
+        "budget": [optimal_design["budget"]],
+        "min_detectable_iroas": [config.minimum_detectable_iroas],
+        "rmse": [optimal_design["rmse"]],
+        "rmse_cost_adjusted": [optimal_design["rmse_cost_adjusted"]],
+        "experiment_spend": [optimal_design["experiment_spend"]],
+        "num_pairs": [optimal_design["num_pairs"]],
+        "trim_rate": [optimal_design["trim_rate"]]
+    })
+    
+    # Save design summary
+    design_summary.to_csv(os.path.join(data_dir, "design_summary.csv"), index=False)
+    
+    # Generate and save trade-off visualizations
+    visualization_paths = designer.add_trade_off_visualizations(
+        design_results_df, 
+        plots_dir
+    )
+    print(f"Design trade-off visualizations saved to {plots_dir}")
     
     # Plot the designs comparison
     fig_design = plot_designs_comparison(design_results["results"])
@@ -513,7 +594,13 @@ def main():
     fig_timeseries.savefig(os.path.join(plots_dir, 'geo_time_series.png'))
     
     # Save dataframes to CSV
-    summary.to_csv(os.path.join(data_dir, 'design_summary.csv'), index=False)
+    summary_path = os.path.join(data_dir, 'design_summary.csv')
+    summary.to_csv(summary_path, index=False)
+    print(f"\n==================== DEBUG FILE SAVING ====================")
+    print(f"Saved summary to: {summary_path}")
+    print(f"Summary content saved:")
+    print(summary)
+    print(f"==========================================================")
     
     # Save geo assignments
     geo_assignments = pd.DataFrame({
@@ -524,7 +611,9 @@ def main():
     geo_assignments.to_csv(os.path.join(data_dir, 'geo_assignments.csv'), index=False)
     
     # Save design results
-    design_results['results'].to_csv(os.path.join(data_dir, 'design_results.csv'), index=False)
+    results_path = os.path.join(data_dir, 'design_results.csv')
+    design_results['results'].to_csv(results_path, index=False)
+    print(f"Saved detailed design results to: {results_path}")
     
     # Create a complete dataset for post-analysis
     # First convert assignment to numeric values (1=Treatment, 2=Control)
@@ -3544,9 +3633,9 @@ def load_data(source, **kwargs):
 
 - Extension: .py
 - Language: python
-- Size: 9787 bytes
-- Created: 2025-03-27 11:21:31
-- Modified: 2025-03-27 11:21:31
+- Size: 30778 bytes
+- Created: 2025-03-31 14:03:13
+- Modified: 2025-03-31 14:03:13
 
 ### Code
 
@@ -3564,6 +3653,550 @@ from trimmed_match.design.common_classes import GeoXType, GeoAssignment
 from geo_causal_inference.utils import TimeWindow
 from trimmed_match.design.trimmed_match_design import TrimmedMatchGeoXDesign
 from trimmed_match.design.util import CalculateMinDetectableIroas
+
+
+def plot_cost_precision_tradeoff(design_results):
+    """
+    Create a plot showing the trade-off between experiment cost and precision.
+    
+    Args:
+        design_results: DataFrame with design results, as returned by calculate_optimal_budget
+    
+    Returns:
+        matplotlib.figure.Figure: The generated plot
+    """
+    import matplotlib.pyplot as plt
+    import numpy as np
+    import pandas as pd
+    import seaborn as sns
+    
+    # Create figure
+    fig, ax = plt.subplots(figsize=(12, 8))
+    
+    # Get unique budgets
+    budgets = design_results['budget'].unique()
+    
+    # Use a more pleasing color palette
+    palette = sns.color_palette("muted", n_colors=len(budgets))
+    
+    # Loop through each budget
+    for i, budget in enumerate(budgets):
+        budget_data = design_results[design_results['budget'] == budget].sort_values('num_pairs')
+        
+        # Plot the cost vs. rmse trade-off
+        scatter = ax.scatter(
+            budget_data['experiment_spend'], 
+            budget_data['rmse'],
+            s=budget_data['num_pairs']*2,  # Size represents number of pairs
+            alpha=0.7,
+            color=palette[i],
+            label=f'Budget ${budget/1000:.1f}K'
+        )
+        
+        # Connect points with a line
+        ax.plot(
+            budget_data['experiment_spend'],
+            budget_data['rmse'],
+            '-',
+            alpha=0.5,
+            color=palette[i]
+        )
+        
+        # Annotate key points
+        min_rmse_idx = budget_data['rmse'].idxmin()
+        if min_rmse_idx in budget_data.index:
+            min_point = budget_data.loc[min_rmse_idx]
+            ax.annotate(
+                f"Pairs: {min_point['num_pairs']:.0f}",
+                (min_point['experiment_spend'], min_point['rmse']),
+                xytext=(10, 0),
+                textcoords='offset points',
+                fontsize=8,
+                arrowprops=dict(arrowstyle='->', color='gray')
+            )
+    
+    # Set labels and title
+    ax.set_xlabel('Experiment Cost ($)')
+    ax.set_ylabel('Raw RMSE')
+    ax.set_title('Cost vs. Precision Trade-off', fontsize=14)
+    
+    # Add legend and grid
+    ax.legend(title='Budget Options')
+    ax.grid(True, linestyle='--', alpha=0.5)
+    
+    # Add a secondary x-axis showing the percentage of total budget
+    if len(budgets) > 0:
+        max_budget = max(budgets)
+        ax2 = ax.twiny()
+        ax2.set_xlim(ax.get_xlim())
+        
+        # Set tick positions based on percentages of max budget
+        tick_positions = np.linspace(0, max_budget, 6)
+        ax2.set_xticks(tick_positions)
+        ax2.set_xticklabels([f'{100*x/max_budget:.0f}%' for x in tick_positions])
+        ax2.set_xlabel('Percentage of Maximum Budget')
+    
+    # Add annotations explaining the trade-off
+    bbox_props = dict(boxstyle="round,pad=0.5", fc="white", ec="gray", alpha=0.8)
+    ax.text(
+        0.02, 0.02, 
+        "Lower RMSE = Higher Precision\nLarger points = More geo pairs",
+        transform=ax.transAxes,
+        fontsize=10,
+        bbox=bbox_props
+    )
+    
+    fig.tight_layout()
+    return fig
+
+
+def plot_design_dashboard(design_results):
+    """
+    Create a comprehensive dashboard of design options.
+    
+    Args:
+        design_results: DataFrame with design results, as returned by calculate_optimal_budget
+    
+    Returns:
+        matplotlib.figure.Figure: The generated dashboard plot
+    """
+    import matplotlib.pyplot as plt
+    import numpy as np
+    import pandas as pd
+    import seaborn as sns
+    
+    # Create a figure with a grid of subplots
+    fig = plt.figure(figsize=(15, 10))
+    
+    # Define subplot grid
+    gs = fig.add_gridspec(2, 3)
+    
+    # Get unique budgets and assign a more pleasing color palette
+    budgets = design_results['budget'].unique()
+    # Use a more harmonious color palette
+    palette = sns.color_palette("muted", n_colors=len(budgets))
+    
+    # Plot 1: Cost vs RMSE
+    ax1 = fig.add_subplot(gs[0, 0])
+    for i, budget in enumerate(budgets):
+        budget_data = design_results[design_results['budget'] == budget].sort_values('experiment_spend')
+        ax1.plot(
+            budget_data['experiment_spend'],
+            budget_data['rmse'],
+            'o-',
+            alpha=0.7,
+            color=palette[i],
+            label=f'${budget/1000:.1f}K'
+        )
+    ax1.set_xlabel('Experiment Cost ($)')
+    ax1.set_ylabel('RMSE')
+    ax1.set_title('Cost vs Raw RMSE')
+    ax1.grid(True, linestyle='--', alpha=0.5)
+    ax1.legend(title='Budget')
+    
+    # Plot 2: Number of Geo Pairs vs RMSE
+    ax2 = fig.add_subplot(gs[0, 1])
+    for i, budget in enumerate(budgets):
+        # Sort by number of pairs to ensure the line connects points in order
+        budget_data = design_results[design_results['budget'] == budget].sort_values('num_pairs')
+        ax2.plot(
+            budget_data['num_pairs'],
+            budget_data['rmse'],
+            'o-',
+            alpha=0.7,
+            color=palette[i],
+            label=f'${budget/1000:.1f}K'
+        )
+    ax2.set_xlabel('Number of Geo Pairs')
+    ax2.set_ylabel('RMSE')
+    ax2.set_title('Geo Pairs vs RMSE')
+    ax2.grid(True, linestyle='--', alpha=0.5)
+    ax2.legend(title='Budget')
+    
+    # Plot 3: Trim Rate vs RMSE
+    ax3 = fig.add_subplot(gs[0, 2])
+    for i, budget in enumerate(budgets):
+        budget_data = design_results[design_results['budget'] == budget]
+        sc = ax3.scatter(
+            budget_data['trim_rate'] * 100,  # Convert to percentage
+            budget_data['rmse'],
+            alpha=0.7,
+            s=50,
+            c=budget_data['num_pairs'],
+            cmap='viridis'
+        )
+    cbar = plt.colorbar(sc, ax=ax3)
+    cbar.set_label('Number of Pairs')
+    ax3.set_xlabel('Trim Rate (%)')
+    ax3.set_ylabel('RMSE')
+    ax3.set_title('Trim Rate vs RMSE')
+    ax3.grid(True, linestyle='--', alpha=0.5)
+    
+    # Plot 4: Elbow Curve - Number of Pairs vs RMSE Cost Adjusted
+    ax4 = fig.add_subplot(gs[1, 0:2])
+    for i, budget in enumerate(budgets):
+        budget_data = design_results[design_results['budget'] == budget].sort_values('num_pairs')
+        
+        # Mark the "elbow point" using the point of maximum curvature
+        x = budget_data['num_pairs'].values
+        y = budget_data['rmse_cost_adjusted'].values
+        
+        ax4.plot(
+            x, 
+            y,
+            'o-',
+            alpha=0.7,
+            color=palette[i],
+            label=f'${budget/1000:.1f}K'
+        )
+        
+        # Find the minimum point
+        min_idx = budget_data['rmse_cost_adjusted'].idxmin()
+        min_point = budget_data.loc[min_idx]
+        ax4.scatter(
+            min_point['num_pairs'],
+            min_point['rmse_cost_adjusted'],
+            s=100,
+            edgecolor='black',
+            color=palette[i],
+            zorder=5,
+            marker='*'
+        )
+        
+    ax4.set_xlabel('Number of Geo Pairs')
+    ax4.set_ylabel('RMSE Cost Adjusted')
+    ax4.set_title('Elbow Curve: Finding Optimal Number of Pairs')
+    ax4.grid(True, linestyle='--', alpha=0.5)
+    ax4.legend(title='Budget')
+    
+    # Plot 5: Budget Comparison
+    ax5 = fig.add_subplot(gs[1, 2])
+    
+    # Get the minimum RMSE cost adjusted for each budget
+    min_rmse_by_budget = []
+    for budget in budgets:
+        budget_data = design_results[design_results['budget'] == budget]
+        min_idx = budget_data['rmse_cost_adjusted'].idxmin()
+        min_point = budget_data.loc[min_idx]
+        min_rmse_by_budget.append({
+            'budget': budget,
+            'rmse_cost_adjusted': min_point['rmse_cost_adjusted'],
+            'experiment_spend': min_point['experiment_spend'],
+            'num_pairs': min_point['num_pairs']
+        })
+    
+    df_min = pd.DataFrame(min_rmse_by_budget)
+    
+    # Bar chart with the new color palette
+    bars = ax5.bar(
+        range(len(df_min)),
+        df_min['rmse_cost_adjusted'],
+        color=palette[:len(df_min)]
+    )
+    
+    # Add budget labels
+    ax5.set_xticks(range(len(df_min)))
+    ax5.set_xticklabels([f'${b/1000:.1f}K' for b in df_min['budget']])
+    
+    # Add value annotations
+    for i, bar in enumerate(bars):
+        ax5.text(
+            bar.get_x() + bar.get_width()/2,
+            bar.get_height() + 0.001,
+            f"Pairs: {df_min.iloc[i]['num_pairs']:.0f}\nCost: ${df_min.iloc[i]['experiment_spend']/1000:.1f}K",
+            ha='center',
+            va='bottom',
+            fontsize=8
+        )
+    
+    ax5.set_ylabel('RMSE Cost Adjusted')
+    ax5.set_title('Optimal Design by Budget')
+    ax5.grid(True, axis='y', linestyle='--', alpha=0.5)
+    
+    # Add overall title
+    fig.suptitle('Experiment Design Trade-offs Dashboard', fontsize=16)
+    fig.tight_layout(rect=[0, 0, 1, 0.96])
+    
+    return fig
+
+
+def plot_bang_for_buck(design_results):
+    """
+    Create a "bang for the buck" visualization showing improvement in 
+    precision per dollar spent.
+    
+    Args:
+        design_results: DataFrame with design results, as returned by calculate_optimal_budget
+    
+    Returns:
+        matplotlib.figure.Figure: The generated plot
+    """
+    import matplotlib.pyplot as plt
+    import numpy as np
+    import pandas as pd
+    import seaborn as sns
+    
+    # Create figure
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(15, 6))
+    
+    # Get unique budgets
+    budgets = design_results['budget'].unique()
+    
+    # Use a more harmonious color palette 
+    palette = sns.color_palette("muted", n_colors=len(budgets))
+    
+    # Plot 1: RMSE reduction per dollar vs. budget
+    for i, budget in enumerate(budgets):
+        budget_data = design_results[design_results['budget'] == budget].sort_values('num_pairs', ascending=False)
+        
+        if len(budget_data) > 1:
+            # Calculate RMSE reduction per dollar spent
+            budget_data = budget_data.copy()
+            # Get the worst (highest) RMSE value for this budget
+            max_rmse = budget_data['rmse'].max()
+            
+            # Calculate improvement from the worst RMSE
+            budget_data['rmse_improvement'] = max_rmse - budget_data['rmse']
+            
+            # Calculate bang for the buck (improvement per dollar)
+            budget_data['bang_for_buck'] = budget_data['rmse_improvement'] / budget_data['experiment_spend']
+            
+            # Multiply by 10000 for readability
+            budget_data['bang_for_buck'] *= 10000
+            
+            # Plot bang for buck vs. experiment cost
+            ax1.plot(
+                budget_data['experiment_spend'],
+                budget_data['bang_for_buck'],
+                'o-',
+                alpha=0.7,
+                color=palette[i],
+                label=f'${budget/1000:.1f}K'
+            )
+            
+            # Highlight the optimal point (maximum bang for the buck)
+            max_idx = budget_data['bang_for_buck'].idxmax()
+            max_point = budget_data.loc[max_idx]
+            ax1.scatter(
+                max_point['experiment_spend'],
+                max_point['bang_for_buck'],
+                s=120,
+                edgecolor='black',
+                color=palette[i],
+                zorder=5,
+                marker='*'
+            )
+    
+    ax1.set_xlabel('Experiment Cost ($)')
+    ax1.set_ylabel('RMSE Reduction per $10K Spent')
+    ax1.set_title('Diminishing Returns on Additional Spend')
+    ax1.grid(True, linestyle='--', alpha=0.5)
+    ax1.legend(title='Budget')
+    
+    # Plot 2: Relationship between number of pairs and RMSE improvement
+    for i, budget in enumerate(budgets):
+        budget_data = design_results[design_results['budget'] == budget].sort_values('num_pairs')
+        
+        if len(budget_data) > 1:
+            # Calculate the rate of RMSE improvement vs. number of pairs            
+            ax2.scatter(
+                budget_data['num_pairs'],
+                budget_data['rmse'],
+                alpha=0.7,
+                s=60,
+                color=palette[i],
+                label=f'${budget/1000:.1f}K'
+            )
+            
+            # Plot regression line to show trend
+            z = np.polyfit(budget_data['num_pairs'], budget_data['rmse'], 1)
+            p = np.poly1d(z)
+            x_range = np.linspace(budget_data['num_pairs'].min(), budget_data['num_pairs'].max(), 100)
+            ax2.plot(
+                x_range, 
+                p(x_range), 
+                '--', 
+                color=palette[i], 
+                alpha=0.5
+            )
+    
+    ax2.set_xlabel('Number of Geo Pairs')
+    ax2.set_ylabel('RMSE')
+    ax2.set_title('Relationship Between Geo Pairs and Precision')
+    ax2.grid(True, linestyle='--', alpha=0.5)
+    ax2.legend(title='Budget')
+    
+    # Add annotations
+    bbox_props = dict(boxstyle="round,pad=0.5", fc="white", ec="gray", alpha=0.8)
+    ax1.text(
+        0.02, 0.02, 
+        "Higher = Better value\nShows diminishing returns as spending increases",
+        transform=ax1.transAxes,
+        fontsize=10,
+        bbox=bbox_props
+    )
+    
+    ax2.text(
+        0.02, 0.98, 
+        "More pairs (left) generally leads\nto better precision (lower RMSE)",
+        transform=ax2.transAxes,
+        fontsize=10,
+        va='top',
+        bbox=bbox_props
+    )
+    
+    fig.suptitle('Value Analysis: Finding the "Sweet Spot" for Experiment Design', fontsize=14)
+    fig.tight_layout(rect=[0, 0, 1, 0.95])
+    
+    return fig
+
+
+def create_interactive_design_explorer(design_results):
+    """
+    Create an interactive design explorer using ipywidgets.
+    
+    Note: This function is intended to be used in a Jupyter notebook environment.
+    
+    Args:
+        design_results: DataFrame with design results, as returned by calculate_optimal_budget
+    
+    Returns:
+        ipywidgets.Widget: The interactive dashboard
+    """
+    try:
+        import ipywidgets as widgets
+        from IPython.display import display
+        import matplotlib.pyplot as plt
+        import numpy as np
+        
+        # Create widgets
+        budget_selector = widgets.SelectMultiple(
+            options=sorted([f"${b/1000:.1f}K" for b in design_results['budget'].unique()]),
+            description='Budget:',
+            disabled=False
+        )
+        
+        min_pairs = widgets.IntSlider(
+            value=int(design_results['num_pairs'].min()),
+            min=int(design_results['num_pairs'].min()),
+            max=int(design_results['num_pairs'].max()),
+            step=1,
+            description='Min Pairs:',
+            disabled=False
+        )
+        
+        max_rmse = widgets.FloatSlider(
+            value=float(design_results['rmse_cost_adjusted'].max()),
+            min=float(design_results['rmse_cost_adjusted'].min()),
+            max=float(design_results['rmse_cost_adjusted'].max()),
+            step=0.001,
+            description='Max RMSE:',
+            disabled=False
+        )
+        
+        max_cost = widgets.FloatSlider(
+            value=float(design_results['experiment_spend'].max()),
+            min=float(design_results['experiment_spend'].min()),
+            max=float(design_results['experiment_spend'].max()),
+            step=1000,
+            description='Max Cost ($):',
+            disabled=False
+        )
+        
+        # Output widget for plotting
+        output = widgets.Output()
+        
+        # Function to update the plot
+        def update_plot(*args):
+            with output:
+                # Clear previous output
+                output.clear_output(wait=True)
+                
+                # Get selected budgets
+                selected_budgets = [float(b.replace('$', '').replace('K', '')) * 1000 for b in budget_selector.value]
+                if not selected_budgets:
+                    selected_budgets = design_results['budget'].unique()
+                
+                # Filter data
+                filtered_data = design_results[
+                    (design_results['budget'].isin(selected_budgets)) &
+                    (design_results['num_pairs'] >= min_pairs.value) &
+                    (design_results['rmse_cost_adjusted'] <= max_rmse.value) &
+                    (design_results['experiment_spend'] <= max_cost.value)
+                ]
+                
+                if len(filtered_data) == 0:
+                    print("No data matches the current filters.")
+                    return
+                
+                # Create plot
+                fig, ax = plt.subplots(figsize=(10, 6))
+                
+                # Color map for different budgets
+                colors = plt.cm.tab10(np.linspace(0, 1, len(selected_budgets)))
+                
+                # Plot each budget scenario
+                for i, budget in enumerate(selected_budgets):
+                    budget_data = filtered_data[filtered_data['budget'] == budget]
+                    if len(budget_data) == 0:
+                        continue
+                        
+                    scatter = ax.scatter(
+                        budget_data['experiment_spend'],
+                        budget_data['rmse_cost_adjusted'],
+                        alpha=0.7,
+                        s=budget_data['num_pairs'],
+                        c=[colors[i]],
+                        label=f'Budget: ${budget/1000:.1f}K'
+                    )
+                    
+                    # Add annotations for key points
+                    min_idx = budget_data['rmse_cost_adjusted'].idxmin()
+                    if min_idx in budget_data.index:
+                        min_point = budget_data.loc[min_idx]
+                        ax.annotate(
+                            f"Pairs: {min_point['num_pairs']}",
+                            (min_point['experiment_spend'], min_point['rmse_cost_adjusted']),
+                            xytext=(10, 0),
+                            textcoords='offset points'
+                        )
+                
+                # Set labels and title
+                ax.set_xlabel('Experiment Cost ($)')
+                ax.set_ylabel('RMSE (Cost Adjusted)')
+                ax.set_title('Filtered Design Options')
+                
+                # Add grid and legend
+                ax.grid(True, linestyle='--', alpha=0.7)
+                ax.legend()
+                
+                # Show plot
+                plt.tight_layout()
+                plt.show()
+                
+                # Show table of best options
+                print("Top 5 Designs by RMSE Cost Adjusted:")
+                display(filtered_data.sort_values('rmse_cost_adjusted').head(5)[
+                    ['budget', 'num_pairs', 'experiment_spend', 'rmse', 'rmse_cost_adjusted', 'trim_rate']
+                ].reset_index(drop=True))
+        
+        # Connect widgets to update function
+        budget_selector.observe(update_plot, names='value')
+        min_pairs.observe(update_plot, names='value')
+        max_rmse.observe(update_plot, names='value')
+        max_cost.observe(update_plot, names='value')
+        
+        # Create layout
+        controls = widgets.VBox([budget_selector, min_pairs, max_rmse, max_cost])
+        dashboard = widgets.HBox([controls, output])
+        
+        # Initial update
+        update_plot()
+        
+        return dashboard
+    except ImportError:
+        print("ipywidgets is required for the interactive explorer. Install with: pip install ipywidgets")
+        return None
 
 
 class ExperimentDesigner:
@@ -3822,6 +4455,49 @@ class ExperimentDesigner:
             group_treatment=group_treatment
         )
 
+    def add_trade_off_visualizations(self, results_df, output_dir):
+        """
+        Generate and save visualizations showing the design trade-offs.
+        
+        Args:
+            results_df: DataFrame with design results, typically from the 'results' key in 
+                       the dictionary returned by calculate_optimal_budget
+            output_dir: Directory where to save the visualizations
+            
+        Returns:
+            dict: Dictionary with paths to the saved visualizations
+        """
+        import os
+        import matplotlib.pyplot as plt
+        
+        # Create output directory if it doesn't exist
+        os.makedirs(output_dir, exist_ok=True)
+        
+        # Generate visualizations
+        fig_pareto = plot_cost_precision_tradeoff(results_df)
+        fig_dashboard = plot_design_dashboard(results_df)
+        fig_returns = plot_bang_for_buck(results_df)
+        
+        # Save visualizations
+        pareto_path = os.path.join(output_dir, 'design_pareto.png')
+        dashboard_path = os.path.join(output_dir, 'design_dashboard.png')
+        returns_path = os.path.join(output_dir, 'design_returns.png')
+        
+        fig_pareto.savefig(pareto_path, dpi=300, bbox_inches='tight')
+        fig_dashboard.savefig(dashboard_path, dpi=300, bbox_inches='tight')
+        fig_returns.savefig(returns_path, dpi=300, bbox_inches='tight')
+        
+        # Close figures to free memory
+        plt.close(fig_pareto)
+        plt.close(fig_dashboard)
+        plt.close(fig_returns)
+        
+        return {
+            'pareto': pareto_path,
+            'dashboard': dashboard_path,
+            'returns': returns_path
+        }
+
 ```
 
 ## File: src/geo_causal_inference/__init__.py
@@ -3850,9 +4526,9 @@ __version__ = "0.1.0"
 
 - Extension: .py
 - Language: python
-- Size: 6278 bytes
-- Created: 2025-03-27 11:16:38
-- Modified: 2025-03-25 14:42:04
+- Size: 6610 bytes
+- Created: 2025-03-31 13:35:17
+- Modified: 2025-03-31 13:35:17
 
 ### Code
 
@@ -3889,10 +4565,21 @@ def plot_designs_comparison(results, metric='rmse_cost_adjusted'):
     ax.grid(True, alpha=0.3)
     
     # Annotate the best design
-    best_design = results.loc[results[metric].idxmin()]
+    best_idx = results[metric].idxmin()
+    best_design = results.loc[best_idx]
+    
+    # Handle the case where best_design returns a DataFrame with multiple rows
+    if isinstance(best_design, pd.DataFrame):
+        # Use the first row
+        best_design = best_design.iloc[0]
+    
+    # Extract scalar values for formatting
+    budget_value = best_design['budget']
+    metric_value = best_design[metric]
+    
     ax.annotate(
-        f'Best: {best_design["budget"]:.0f}',
-        xy=(best_design['budget'], best_design[metric]),
+        f'Best: {budget_value:.0f}',
+        xy=(budget_value, metric_value),
         xytext=(10, -20),
         textcoords='offset points',
         arrowprops=dict(arrowstyle='->', connectionstyle='arc3,rad=0.2')
@@ -4057,9 +4744,9 @@ def plot_design_summary(design_results, min_detectable_iroas, min_detectable_lif
 
 - Extension: .py
 - Language: python
-- Size: 12376 bytes
-- Created: 2025-03-27 11:16:38
-- Modified: 2025-03-26 11:25:51
+- Size: 13532 bytes
+- Created: 2025-03-31 13:37:14
+- Modified: 2025-03-31 13:37:14
 
 ### Code
 
@@ -4175,14 +4862,44 @@ def format_summary_table(design_results, minimum_detectable_iroas, min_detectabl
         pandas.DataFrame: Formatted summary table
     """
     results = design_results["results"]
-    best_design = results.loc[results['rmse_cost_adjusted'].idxmin()]
+    
+    # Add debug print to understand results structure
+    print("\n==== DEBUG: Design Results Info ====")
+    print(f"Results shape: {results.shape}")
+    
+    # Find the row with minimum rmse_cost_adjusted
+    min_rmse_idx = results['rmse_cost_adjusted'].idxmin()
+    print(f"Min RMSE Cost Adjusted Index: {min_rmse_idx}")
+    
+    # Get the best design row
+    best_design = results.loc[min_rmse_idx]
+    print(f"Best design type: {type(best_design)}")
+    
+    # Check if we have multiple rows with the same index
+    if isinstance(best_design, pd.DataFrame):
+        print(f"Multiple design rows found with index {min_rmse_idx}, shape: {best_design.shape}")
+        # Use the first row
+        best_design = best_design.iloc[0]
+        print("Using first row of best design")
+    
+    # Print key values for debugging
+    print("\n==== Best Design Values ====")
+    for col in ['budget', 'rmse', 'rmse_cost_adjusted', 'pair_index', 'num_pairs']:
+        if col in best_design:
+            print(f"{col}: {best_design[col]}")
+    
+    # Extract scalar values to avoid formatting errors with Series
+    budget_value = best_design['budget']
+    rmse = best_design['rmse']
+    rmse_cost_adjusted = best_design['rmse_cost_adjusted']
+    pair_index = best_design['pair_index']
     
     summary = pd.DataFrame([{
-        'Budget': format_budget(best_design['budget']),
+        'Budget': format_budget(budget_value),
         'Min Detectable iROAS': f"{minimum_detectable_iroas:.2f}",
-        'RMSE': f"{best_design['rmse']:.4f}",
-        'RMSE (Cost Adjusted)': f"{best_design['rmse_cost_adjusted']:.4f}",
-        'Pair Index': int(best_design['pair_index']),
+        'RMSE': f"{rmse:.4f}",
+        'RMSE (Cost Adjusted)': f"{rmse_cost_adjusted:.4f}",
+        'Pair Index': int(pair_index),
     }])
     
     if min_detectable_lift is not None:
