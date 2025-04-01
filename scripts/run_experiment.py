@@ -83,7 +83,8 @@ def main():
     config = ExperimentConfig(
         geox_type=GeoXType.HOLD_BACK,
         experiment_duration_weeks=4,
-        experiment_budget=300000.0,
+        experiment_budget=15000.0,
+        alternative_budgets=[15000.0, 20000.0, 25000.0],
         minimum_detectable_iroas=3.0,
         average_order_value=256, # average order value in dollars / total sessions
         significance_level=0.10,
