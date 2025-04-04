@@ -18,7 +18,7 @@ from geo_causal_inference.validation import validate_input_data, validate_experi
 from geo_causal_inference.design import ExperimentDesigner
 from geo_causal_inference.config import ExperimentConfig
 from geo_causal_inference.utils import create_time_window, format_summary_table
-from geo_causal_inference.visualization import plot_designs_comparison, plot_geo_time_series
+from geo_causal_inference.visualization import plot_designs_comparison, plot_geo_time_series, plot_geo_map
 
 from trimmed_match.design.common_classes import GeoXType, GeoAssignment
 
@@ -317,6 +317,24 @@ def main():
                       for geo in sorted(treatment_geo + control_geo)]
     })
     geo_assignments.to_csv(os.path.join(data_dir, 'geo_assignments.csv'), index=False)
+    
+    # Create and save a geographic visualization of treatment/control assignments
+    geo_spine_path = os.path.abspath(os.path.join(
+        os.path.dirname(__file__), 
+        '..', 
+        'data',
+        'reference',
+        'geo_spine.csv'
+    ))
+    
+    fig_geo_map = plot_geo_map(
+        geo_assignments=geo_assignments,
+        spine_path=geo_spine_path,
+        map_type='dma',
+        debug=True  # Enable debug mode for detailed logging
+    )
+    fig_geo_map.savefig(os.path.join(plots_dir, 'geo_assignment_map.png'))
+    print(f"Saved geographic treatment/control map to: {os.path.join(plots_dir, 'geo_assignment_map.png')}")
     
     # Save design results
     results_path = os.path.join(data_dir, 'design_results.csv')
