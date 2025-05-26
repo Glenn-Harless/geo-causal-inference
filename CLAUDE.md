@@ -21,4 +21,4 @@
 ## Data Pipeline
 - Standardize dates to ISO format YYYY-MM-DD
 - Geo data uses DMA (Designated Market Area) as standard reference
-- Always validate data before experiment design
+- Always validate data before experiment design.
