@@ -1,6 +1,7 @@
 # Table of Contents
 - __init__.py
 - setup.py
+- test_map.py
 - scripts/run_postanalysis.py
 - scripts/run_experiment.py
 - design_trimmed_match/design_colab_for_trimmed_match_og.py
@@ -58,6 +59,64 @@ setup(
     name="geo_causal_inference",
     version="0.1.0",
     package_dir={"": "src"},
+)
+
+```
+
+## File: test_map.py
+
+- Extension: .py
+- Language: python
+- Size: 1120 bytes
+- Created: 2025-04-09 09:03:04
+- Modified: 2025-04-09 09:03:04
+
+### Code
+
+```python
+#!/usr/bin/env python
+"""
+Test script for the geo map visualization.
+"""
+
+import os
+import pandas as pd
+import sys
+import matplotlib.pyplot as plt
+import warnings
+warnings.filterwarnings('ignore')
+
+# Ensure output directory exists
+output_dir = os.path.join('/app/output', 'map_test')
+os.makedirs(output_dir, exist_ok=True)
+
+# Add the project to the path
+sys.path.insert(0, '/app')
+
+# Import the visualization module
+from src.geo_causal_inference.visualization import plot_geo_map
+
+# Path to the geo spine data
+spine_path = '/app/data/reference/geo_spine.csv'
+
+# Path to geo assignments
+assignments_path = '/app/output/client1_weekly/design/data/geo_assignments.csv'
+
+# Check if file exists
+if not os.path.exists(assignments_path):
+    print(f"File not found: {assignments_path}")
+    sys.exit(1)
+
+# Read geo assignments
+geo_assignments = pd.read_csv(assignments_path)
+
+# Save the map visualization
+plot_geo_map(
+    geo_assignments=geo_assignments,
+    spine_path=spine_path,
+    map_type='dma',
+    debug=True,  # Add debug mode to get more verbose output
+    output_path=os.path.join(output_dir, 'geo_map_test.png')
 )
 
 ```
@@ -284,9 +343,9 @@ if __name__ == "__main__":
 
 - Extension: .py
 - Language: python
-- Size: 16400 bytes
-- Created: 2025-03-31 14:49:34
-- Modified: 2025-03-31 14:49:34
+- Size: 17115 bytes
+- Created: 2025-04-09 09:03:04
+- Modified: 2025-04-09 09:03:04
 
 ### Code
 
@@ -311,7 +370,7 @@ from geo_causal_inference.validation import validate_input_data, validate_experi
 from geo_causal_inference.design import ExperimentDesigner
 from geo_causal_inference.config import ExperimentConfig
 from geo_causal_inference.utils import create_time_window, format_summary_table
-from geo_causal_inference.visualization import plot_designs_comparison, plot_geo_time_series
+from geo_causal_inference.visualization import plot_designs_comparison, plot_geo_time_series, plot_geo_map
 
 from trimmed_match.design.common_classes import GeoXType, GeoAssignment
 
@@ -376,7 +435,8 @@ def main():
     config = ExperimentConfig(
         geox_type=GeoXType.HOLD_BACK,
         experiment_duration_weeks=4,
-        experiment_budget=300000.0,
+        experiment_budget=15000.0,
+        alternative_budgets=[15000.0, 20000.0, 25000.0],
         minimum_detectable_iroas=3.0,
         average_order_value=256, # average order value in dollars / total sessions
         significance_level=0.10,
@@ -609,6 +669,24 @@ def main():
                       for geo in sorted(treatment_geo + control_geo)]
     })
     geo_assignments.to_csv(os.path.join(data_dir, 'geo_assignments.csv'), index=False)
+    
+    # Create and save a geographic visualization of treatment/control assignments
+    geo_spine_path = os.path.abspath(os.path.join(
+        os.path.dirname(__file__), 
+        '..', 
+        'data',
+        'reference',
+        'geo_spine.csv'
+    ))
+    
+    fig_geo_map = plot_geo_map(
+        geo_assignments=geo_assignments,
+        spine_path=geo_spine_path,
+        map_type='dma',
+        debug=True  # Enable debug mode for detailed logging
+    )
+    fig_geo_map.savefig(os.path.join(plots_dir, 'geo_assignment_map.png'))
+    print(f"Saved geographic treatment/control map to: {os.path.join(plots_dir, 'geo_assignment_map.png')}")
     
     # Save design results
     results_path = os.path.join(data_dir, 'design_results.csv')
@@ -3634,8 +3712,8 @@ def load_data(source, **kwargs):
 - Extension: .py
 - Language: python
 - Size: 30778 bytes
-- Created: 2025-03-31 14:03:13
-- Modified: 2025-03-31 14:03:13
+- Created: 2025-04-04 12:50:01
+- Modified: 2025-04-04 12:50:01
 
 ### Code
 
@@ -4526,9 +4604,9 @@ __version__ = "0.1.0"
 
 - Extension: .py
 - Language: python
-- Size: 6610 bytes
-- Created: 2025-03-31 13:35:17
-- Modified: 2025-03-31 13:35:17
+- Size: 16365 bytes
+- Created: 2025-04-09 09:03:04
+- Modified: 2025-04-09 09:03:04
 
 ### Code
 
@@ -4544,6 +4622,8 @@ import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
 import numpy as np
 import pandas as pd
+import geopandas as gpd
+from matplotlib.colors import ListedColormap
 
 
 def plot_designs_comparison(results, metric='rmse_cost_adjusted'):
@@ -4738,6 +4818,236 @@ def plot_design_summary(design_results, min_detectable_iroas, min_detectable_lif
     plt.tight_layout()
     return fig
 
+
+def plot_geo_map(geo_assignments, spine_path, map_type='dma', debug=False, output_path=None):
+    """
+    Plot a choropleth map of the US by state showing treatment and control areas.
+    
+    Parameters
+    ----------
+    geo_assignments: pandas.DataFrame or list of dict
+        DataFrame or list of dictionaries containing geo codes and their assignments.
+        Must contain columns/keys 'geo' and 'assignment'.
+    spine_path: str
+        Path to the geo spine file.
+    map_type: str, optional
+        Type of map to plot. Currently supports 'dma'.
+        Default is 'dma'.
+    debug: bool, optional
+        Whether to print debug information.
+        Default is False.
+    output_path: str, optional
+        Path to save the map. If None, the figure is returned.
+        Default is None.
+    
+    Returns
+    -------
+    str
+        Path to the saved figure if output_path is provided, otherwise None.
+    """
+    import pandas as pd
+    import numpy as np
+    import matplotlib.pyplot as plt
+    import geopandas as gpd
+    from matplotlib.colors import ListedColormap
+    import matplotlib.patches as mpatches
+    
+    # Read the geo spine
+    geo_spine = pd.read_csv(spine_path)
+    
+    # Process geo_assignments if it's a list
+    if isinstance(geo_assignments, list):
+        if debug:
+            print(f"Loaded {len(geo_assignments)} geo assignments")
+            print(f"Sample: {geo_assignments[:5]}")
+        
+        # Convert to dataframe
+        geo_assignments = pd.DataFrame(geo_assignments)
+        
+        if debug:
+            print(f"Loaded {len(geo_assignments)} geo assignments")
+            print(f"Sample: {geo_assignments.head()}")
+    
+    # Ensure the geo columns in geo_assignments and geo_spine match types
+    if debug:
+        print(f"Number of unique geos in assignments: {len(geo_assignments['geo'].unique())}")
+        print(f"Sample geo values: {geo_assignments['geo'].unique()[:5]}")
+        print(f"Number of unique DMAs in spine: {len(geo_spine['dma_code'].unique())}")
+        print(f"Sample DMA values: {geo_spine['dma_code'].unique()[:5]}")
+        print(f"DMA value types in assignments: {geo_assignments['geo'].dtype}")
+        print(f"DMA value types in spine: {geo_spine['dma_code'].dtype}")
+    
+    # Check for states in the spine
+    states = geo_spine['state'].unique()
+    if debug:
+        states_without_nan = [s for s in states if pd.notna(s)]
+        print(f"States in spine data: {sorted(states_without_nan)}")
+    
+    # Create the figure and axis for plotting
+    fig, ax = plt.subplots(1, 1, figsize=(12, 8))
+    
+    # Filter the spine to DMAs we're using
+    if map_type == 'dma':
+        # Identify treatment and control DMAs
+        treatment_dmas = geo_assignments[geo_assignments['assignment'] == 'treatment']['geo'].unique()
+        control_dmas = geo_assignments[geo_assignments['assignment'] == 'control']['geo'].unique()
+        
+        if debug:
+            print(f"Treatment DMAs: {treatment_dmas}")
+            print(f"Control DMAs: {control_dmas}")
+        
+        # Create a mapping of DMAs to states
+        dma_to_states = {}
+        for dma in sorted(set(treatment_dmas) | set(control_dmas)):
+            states = geo_spine[geo_spine['dma_code'] == dma]['state'].unique()
+            states_filtered = [s for s in states if pd.notna(s)]
+            dma_to_states[dma] = sorted(states_filtered)
+        
+        if debug:
+            print("DMA to States mapping (sample first 5):")
+            for i, (dma, states) in enumerate(list(dma_to_states.items())[:5]):
+                print(f"  DMA {dma}: {states}")
+        
+        # Identify the treatment/control status for each state
+        state_status = {}
+        for state in sorted([s for s in geo_spine['state'].unique() if pd.notna(s)]):
+            # Get all DMAs in this state
+            dmas_in_state = geo_spine[geo_spine['state'] == state]['dma_code'].unique()
+            
+            # Check if all DMAs in the state are either treatment or control
+            treatment_count = sum(1 for dma in dmas_in_state if dma in treatment_dmas)
+            control_count = sum(1 for dma in dmas_in_state if dma in control_dmas)
+            
+            if debug:
+                print(f"{state} ({state}): ", end="")
+            
+            if treatment_count > 0 and control_count == 0:
+                # All DMAs in state are treatment
+                state_status[state] = 'treatment'
+                if debug:
+                    print("treatment")
+            elif control_count > 0 and treatment_count == 0:
+                # All DMAs in state are control
+                state_status[state] = 'control'
+                if debug:
+                    print("control")
+            else:
+                if treatment_count > 0 or control_count > 0:
+                    # State has mixed treatment/control status
+                    state_status[state] = 'mixed'
+                    if debug:
+                        print("mixed")
+                else:
+                    # State has no DMAs in the study
+                    state_status[state] = 'unmapped'
+                    if debug:
+                        print("unmapped")
+    
+    # Load US States geometry from a GeoJSON URL
+    states_geojson_url = "https://raw.githubusercontent.com/python-visualization/folium/master/examples/data/us-states.json"
+    us_states_gdf = gpd.read_file(states_geojson_url)
+
+    # --- DEBUG CHECK: Verify loaded data ---
+    if 'name' not in us_states_gdf.columns or not us_states_gdf['name'].iloc[0] == 'Alabama':
+        print("\nERROR: Failed to load correct US States GeoJSON.")
+        print("Loaded columns:", us_states_gdf.columns)
+        print("Sample data:", us_states_gdf.head())
+        # Handle error appropriately, maybe raise an exception or plot an error message
+        ax.set_title("Error Loading State Map Data")
+        ax.text(0.5, 0.5, "Failed to load state geometry data from URL.", ha='center', va='center')
+        if output_path:
+             plt.savefig(output_path)
+             plt.close(fig)
+        return output_path or fig
+    # --- END DEBUG CHECK ---
+    
+    if debug:
+        print("\nDEBUG: Successfully loaded US States GeoDataFrame from URL:")
+        print(us_states_gdf[['id', 'name', 'geometry']].head())
+        print(f"Columns: {us_states_gdf.columns}")
+
+    # Filter out Alaska and Hawaii for a continental US view
+    us_states_gdf = us_states_gdf[~us_states_gdf['name'].isin(['Alaska', 'Hawaii'])]
+    
+    # Use full state names from spine for merging
+    state_name_map = geo_spine[['state', 'state_name']].drop_duplicates().set_index('state')['state_name']
+    state_status_df = pd.DataFrame(list(state_status.items()), columns=['state_abbr', 'status'])
+    state_status_df['STATE_NAME'] = state_status_df['state_abbr'].map(state_name_map)
+
+    if debug:
+        print("\nState Status DF with Names:")
+        print(state_status_df.head())
+
+    # Merge the status data with the GeoDataFrame
+    merged_gdf = us_states_gdf.merge(state_status_df, left_on='name', right_on='STATE_NAME', how='left')
+
+    # Fill states not in our assignment data with 'unmapped'
+    merged_gdf['status'] = merged_gdf['status'].fillna('unmapped')
+
+    if debug:
+        print("\nMerged GeoDataFrame:")
+        print(merged_gdf[['name', 'STATE_NAME', 'status', 'geometry']].head())
+        print(f"Number of states in merged GDF: {len(merged_gdf)}")
+        print(f"Status counts:\n{merged_gdf['status'].value_counts()}")
+
+    # Define desired colors
+    status_colors = {
+        'treatment': '#1f77b4',  # Blue
+        'control': '#ff7f0e',     # Orange
+        'mixed': '#2ca02c',       # Green
+        'unmapped': '#d3d3d3'     # Light gray
+    }
+
+    # Create cmap based on the actual sorted unique values in the status column
+    sorted_statuses = sorted(merged_gdf['status'].unique())
+    ordered_colors = [status_colors[status] for status in sorted_statuses]
+    cmap = ListedColormap(ordered_colors)
+
+    # Plot the choropleth map
+    merged_gdf.plot(column='status', 
+                    categorical=True, 
+                    legend=False, # We create a custom legend below
+                    cmap=cmap, 
+                    linewidth=0.8, 
+                    ax=ax, 
+                    edgecolor='0.8',
+                    missing_kwds={
+                        "color": status_colors['unmapped'], # Use explicit color for missing
+                        "edgecolor": "red",
+                        "hatch": "///",
+                        "label": "Missing values",
+                    })
+
+    # Set title and remove axis
+    ax.set_title("US State Treatment/Control Assignment")
+    ax.set_xticks([])
+    ax.set_yticks([])
+    ax.set_axis_off() # Turn off the axis frame for a cleaner map
+
+    # Create a custom legend using the defined colors
+    legend_patches = [
+        mpatches.Patch(color=status_colors['treatment'], label='Treatment'),
+        mpatches.Patch(color=status_colors['control'], label='Control'),
+        mpatches.Patch(color=status_colors['mixed'], label='Mixed'),
+        mpatches.Patch(color=status_colors['unmapped'], label='Unmapped')
+    ]
+    ax.legend(handles=legend_patches, loc='lower right', title="Assignment Status")
+    
+    # Save or return the figure
+    if output_path:
+        # Create directory if it doesn't exist
+        import os
+        os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
+        
+        # Save the figure
+        plt.tight_layout()
+        plt.savefig(output_path, dpi=300, bbox_inches='tight')
+        plt.close(fig)
+        print(f"Map saved to {output_path}")
+        return output_path
+    else:
+        return fig
+
 ```
 
 ## File: src/geo_causal_inference/utils.py
@@ -4745,8 +5055,8 @@ def plot_design_summary(design_results, min_detectable_iroas, min_detectable_lif
 - Extension: .py
 - Language: python
 - Size: 13532 bytes
-- Created: 2025-03-31 13:37:14
-- Modified: 2025-03-31 13:37:14
+- Created: 2025-04-04 11:18:05
+- Modified: 2025-04-04 11:18:05
 
 ### Code
 
