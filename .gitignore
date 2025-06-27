@@ -172,3 +172,22 @@ cython_debug/
 
 # PyPI configuration file
 .pypirc
+
+# Client and sensitive data
+raw_data/
+data/processed/
+output/
+notebooks/*.csv
+eda/*.csv
+
+# Keep reference data if it's public
+!data/reference/
+
+# Temporary and backup files
+*.bak
+*.tmp
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
